@@ -714,13 +714,16 @@
   }
   async function deleteSession(id) {
     const s = state.byId.get(id);
-    if (s && s.status !== 'ended') { toast('稼働中のセッションは削除できません。終了してから削除してください。'); return false; }
+    const running = !!s && s.status !== 'ended';
+    if (running && s.owner !== 'oyakata') { toast('ターミナルで動いているセッションは削除できません。ターミナルで終了してから削除してください。'); return false; }
     const title = s ? sessionTitle(s) : id;
-    if (!(await confirmDialog('セッションを削除', `「${esc(title)}」を一覧から削除します。会話の記録はゴミ箱（~/.claude/oyakata-trash）に移り、30 日後に消えます。`, { label: '削除', danger: true }))) return false;
+    const stop = running ? 'OYAKATA が動かしている Claude を終了してから（作業中なら中断されます）、' : '';
+    if (!(await confirmDialog('セッションを削除', `${stop}「${esc(title)}」を一覧から削除します。会話の記録はゴミ箱（~/.claude/oyakata-trash）に移り、30 日後に消えます。`, { label: running ? '終了して削除' : '削除', danger: true }))) return false;
     try {
       await api.post(`/api/sessions/${encodeURIComponent(id)}/delete`);
       if (OY.wb.has('chat:' + id)) OY.wb.close('chat:' + id, { force: true });
-      toast('削除しました', { action: '元に戻す', onAction: () => restoreSession(id) });
+      // A session that never wrote a transcript has nothing in the trash to restore.
+      toast('削除しました', s && !s.size ? {} : { action: '元に戻す', onAction: () => restoreSession(id) });
       return true;
     } catch (e) { toast(e.message); return false; }
   }

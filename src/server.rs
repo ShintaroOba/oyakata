@@ -385,9 +385,31 @@ fn push_sessions(app: &Shared) {
 }
 
 async fn delete_session(AxState(app): AxState<Shared>, Path(id): Path<String>) -> Response {
+    // A session OYAKATA runs is ended first so it can be deleted from the browser; one
+    // running in a terminal is still refused by `State::delete_session`.
+    let stopped = app.runners.view(&id).is_some_and(|v| v.status != "exited");
+    if stopped {
+        if let Err(e) = app.runners.stop(&id).await {
+            return err(StatusCode::CONFLICT, format!("{e:#}"));
+        }
+    }
     app.runners.forget_exited(&id);
     let app2 = app.clone();
-    let r = tokio::task::spawn_blocking(move || lock(&app2).delete_session(&id)).await;
+    let r = tokio::task::spawn_blocking(move || {
+        let mut st = lock(&app2);
+        if stopped {
+            // Don't wait for the run-events loop and the next poll to notice the exit, and
+            // pick up a transcript the process only wrote as it exited.
+            st.set_run(&id, None);
+            st.refresh_live();
+            st.discover();
+            if !st.sessions.contains_key(&id) {
+                return Ok(()); // it never wrote a transcript; ending it was all there was to do
+            }
+        }
+        st.delete_session(&id)
+    })
+    .await;
     match r {
         Ok(Ok(())) => {
             push_sessions(&app);

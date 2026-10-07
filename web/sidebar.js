@@ -107,7 +107,8 @@
     const team = s.subagents ? `<span class="chip tiny" title="サブエージェント ${s.subagents}">👥${s.subagents}</span>` : '';
     const sub = s.repo?.subdir ? ` <span class="row-sub">/${esc(s.repo.subdir)}</span>` : '';
     const branch = s.git_branch && s.git_branch !== 'HEAD' ? ` · ${esc(s.git_branch)}` : '';
-    const del = s.status === 'ended' ? '<button type="button" class="row-del" title="このセッションを削除">🗑</button>' : '';
+    const delTitle = s.status === 'ended' ? 'このセッションを削除' : s.owner === 'oyakata' ? '終了してから削除' : 'ターミナルで動いています（終了すると削除できます）';
+    const del = `<button type="button" class="row-del" title="${delTitle}">🗑</button>`;
     return `<div class="row ${cls.join(' ')}" draggable="true" data-id="${esc(s.id)}" title="${esc(sessionTitle(s))}">
       <span class="dot"></span>
       <span class="row-title">${esc(sessionTitle(s))}</span>

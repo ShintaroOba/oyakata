@@ -315,7 +315,7 @@
       h += row('tree', '🌲', 'このリポジトリのツリーと Git');
       if (s) h += row('copy-id', '📋', 'セッション ID をコピー');
       if (s?.owner === 'oyakata') h += '<div class="msep"></div>' + row('end', '⏹', 'セッションを終了', '', 'danger');
-      if (s && s.status === 'ended') h += '<div class="msep"></div>' + row('delete', '🗑', 'セッションを削除', '', 'danger');
+      if (s) h += (s.owner === 'oyakata' ? '' : '<div class="msep"></div>') + row('delete', '🗑', 'セッションを削除', '', 'danger');
       return h;
     }
     outlineHtml() {
