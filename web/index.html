@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OYAKATA</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/vendor/codemirror.css">
+<link rel="stylesheet" href="/assets/vendor/cm-dracula.css">
+<link rel="stylesheet" href="/assets/style.css">
+<link id="hljs-light" rel="stylesheet" href="/assets/vendor/hljs-github.min.css">
+<link id="hljs-dark" rel="stylesheet" href="/assets/vendor/hljs-github-dark.min.css" disabled>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <header class="sb-head">
+      <a class="brand" href="#/" title="OYAKATA"><img class="brand-mark" src="/assets/icon.svg" alt=""><span class="brand-name">OYAKATA</span></a>
+      <div class="sb-actions">
+        <button id="btn-new" class="icon-btn" title="新しいセッションを始める">＋</button>
+        <button id="btn-notify" class="icon-btn" title="待機・許可待ちになったらデスクトップ通知">🔔</button>
+        <button id="btn-settings" class="icon-btn" title="設定（テーマ・文字サイズ）">⚙</button>
+      </div>
+    </header>
+    <div class="sb-switch" id="sb-switch">
+      <button class="sw" data-view="sessions" title="セッション一覧">セッション</button>
+      <button class="sw" data-view="explorer" title="プロジェクトツリー">ツリー</button>
+      <button class="sw" data-view="git" title="Git">Git</button>
+      <span class="spacer"></span>
+      <button class="sw mode" id="sb-mode" title="一覧とツリーを同時に表示 / 切替表示">併置</button>
+    </div>
+    <div class="sb-views" id="sb-views">
+      <section class="sb-view" id="sb-sessions" data-view="sessions">
+        <h4 class="sb-view-title" hidden><span>セッション</span><button class="collapse" title="折り畳む">▾</button></h4>
+        <div class="sb-view-body">
+          <div class="sb-search"><input id="search" type="search" placeholder="セッションを検索  ( / )" autocomplete="off"></div>
+          <nav id="session-list" aria-label="セッション一覧"></nav>
+        </div>
+      </section>
+      <section class="sb-view" id="sb-explorer" data-view="explorer">
+        <h4 class="sb-view-title" hidden><span>ツリー</span><button class="collapse" title="折り畳む">▾</button></h4>
+        <div class="sb-view-body">
+          <div class="sb-repo-row">
+            <select id="explorer-repo" title="表示するリポジトリ"></select>
+            <button id="explorer-follow" class="icon-btn small on" title="開いているチャットのリポジトリに追従">⇄</button>
+            <button id="explorer-refresh" class="icon-btn small" title="再読み込み">↻</button>
+          </div>
+          <div class="sb-search"><input id="tree-filter" type="search" placeholder="ファイルを絞り込む" autocomplete="off"></div>
+          <div id="repo-tree"></div>
+        </div>
+      </section>
+      <section class="sb-view" id="sb-git" data-view="git">
+        <h4 class="sb-view-title" hidden><span>Git</span><button class="collapse" title="折り畳む">▾</button></h4>
+        <div class="sb-view-body" id="git-body"></div>
+      </section>
+    </div>
+    <footer class="sb-foot">
+      <span id="conn" class="conn">接続中…</span>
+      <span id="counts"></span>
+    </footer>
+  </aside>
+
+  <main id="workbench"></main>
+
+  <div id="modal" hidden>
+    <div class="modal-card" id="modal-card" role="dialog" aria-modal="true"></div>
+  </div>
+
+  <div id="settings" class="popover settings" hidden>
+    <h3>設定</h3>
+    <label class="field"><span>テーマ</span><select id="set-theme"></select></label>
+    <div class="field"><span>アクセント</span><div id="set-accent" class="swatches"></div></div>
+    <label class="field"><span>文字サイズ</span><select id="set-font"><option value="13">小</option><option value="14">標準</option><option value="15">大</option><option value="16">特大</option></select></label>
+    <label class="field check"><input type="checkbox" id="set-show-empty"> 空のセッションも一覧に出す</label>
+    <label class="field check"><input type="checkbox" id="set-show-logs"> 作業ログ（ツール呼び出し）を会話に混ぜて表示する</label>
+    <label class="field check"><input type="checkbox" id="set-show-thinking"> 思考ブロックを表示する</label>
+    <div class="field"><span>レイアウト</span><button class="btn" id="set-reset-layout">ペイン配置を初期化</button></div>
+  </div>
+</div>
+<script src="/assets/vendor/marked.umd.js"></script>
+<script src="/assets/vendor/purify.min.js"></script>
+<script src="/assets/vendor/highlight.min.js"></script>
+<script src="/assets/vendor/powershell.min.js"></script>
+<script src="/assets/vendor/mermaid.min.js"></script>
+<script src="/assets/vendor/codemirror.js"></script>
+<script src="/assets/vendor/cm-modes.js"></script>
+<script src="/assets/app.js"></script>
+<script src="/assets/workbench.js"></script>
+<script src="/assets/chat.js"></script>
+<script src="/assets/editors.js"></script>
+<script src="/assets/sidebar.js"></script>
+<script>OY.init();</script>
+</body>
+</html>

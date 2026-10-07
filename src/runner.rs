@@ -1,0 +1,467 @@
+//! OYAKATA-owned Claude Code sessions.
+//!
+//! A session started from the browser is a `claude -p --input-format stream-json` child
+//! process. Prompts go in on stdin, permission prompts come back as `control_request` lines
+//! on stdout and are answered with `control_response`. The conversation itself is still
+//! written by Claude Code to `~/.claude/projects`, so the viewer renders it like any other.
+
+use anyhow::{anyhow, bail, Context, Result};
+use serde::Serialize;
+use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStdin, Command};
+use tokio::sync::{broadcast, Mutex as AsyncMutex};
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PermissionRequest {
+    pub request_id: String,
+    pub tool_name: String,
+    pub display_name: Option<String>,
+    pub input: Value,
+    pub description: Option<String>,
+    pub suggestions: Value,
+    pub tool_use_id: Option<String>,
+    pub requires_user_interaction: bool,
+    pub received_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RunView {
+    pub session_id: String,
+    pub cwd: String,
+    /// `busy` | `idle` | `waiting` | `exited`
+    pub status: String,
+    pub pending: Vec<PermissionRequest>,
+    pub started_at: u64,
+    pub model: Option<String>,
+    pub permission_mode: Option<String>,
+    pub effort: Option<String>,
+    pub resumed: bool,
+    pub turns: u32,
+    pub total_cost_usd: f64,
+    pub exit_code: Option<i32>,
+    pub last_error: Option<String>,
+    pub stderr_tail: Vec<String>,
+}
+
+pub struct Runner {
+    view: Arc<Mutex<RunView>>,
+    stdin: Arc<AsyncMutex<Option<ChildStdin>>>,
+    child: Arc<AsyncMutex<Child>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ClaudeExe {
+    Direct(PathBuf),
+    /// A `.cmd` shim (npm on Windows) that has to go through `cmd /C`.
+    Cmd(PathBuf),
+}
+
+impl ClaudeExe {
+    pub fn display(&self) -> String {
+        match self {
+            ClaudeExe::Direct(p) | ClaudeExe::Cmd(p) => p.display().to_string(),
+        }
+    }
+}
+
+pub struct StartOptions {
+    pub cwd: PathBuf,
+    pub prompt: String,
+    pub resume: Option<String>,
+    pub model: Option<String>,
+    pub permission_mode: Option<String>,
+    pub effort: Option<String>,
+}
+
+pub struct RunnerRegistry {
+    runners: Mutex<HashMap<String, Arc<Runner>>>,
+    exe: Option<ClaudeExe>,
+    /// Session ids whose run state changed; the server turns these into SSE events.
+    pub changed: broadcast::Sender<String>,
+}
+
+impl RunnerRegistry {
+    pub fn new(exe: Option<ClaudeExe>) -> Self {
+        let (changed, _) = broadcast::channel(256);
+        Self { runners: Mutex::new(HashMap::new()), exe, changed }
+    }
+
+    pub fn exe(&self) -> Option<&ClaudeExe> {
+        self.exe.as_ref()
+    }
+
+    pub fn views(&self) -> Vec<RunView> {
+        let map = self.runners.lock().unwrap_or_else(|e| e.into_inner());
+        let mut v: Vec<RunView> = map.values().map(|r| r.view.lock().unwrap_or_else(|e| e.into_inner()).clone()).collect();
+        v.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        v
+    }
+
+    pub fn view(&self, id: &str) -> Option<RunView> {
+        let map = self.runners.lock().unwrap_or_else(|e| e.into_inner());
+        map.get(id).map(|r| r.view.lock().unwrap_or_else(|e| e.into_inner()).clone())
+    }
+
+    fn get(&self, id: &str) -> Result<Arc<Runner>> {
+        let map = self.runners.lock().unwrap_or_else(|e| e.into_inner());
+        map.get(id).cloned().ok_or_else(|| anyhow!("no OYAKATA-run session {id}"))
+    }
+
+    fn notify(&self, id: &str) {
+        let _ = self.changed.send(id.to_string());
+    }
+
+    pub async fn start(self: &Arc<Self>, opts: StartOptions) -> Result<String> {
+        let exe = self.exe.clone().ok_or_else(|| anyhow!("claude executable not found; set --claude or OYAKATA_CLAUDE"))?;
+        if !opts.cwd.is_dir() {
+            bail!("working directory does not exist: {}", opts.cwd.display());
+        }
+        let session_id = opts.resume.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        if self.view(&session_id).map(|v| v.status != "exited").unwrap_or(false) {
+            bail!("session {session_id} is already running under OYAKATA");
+        }
+
+        let mut cmd = match &exe {
+            ClaudeExe::Direct(p) => Command::new(p),
+            ClaudeExe::Cmd(p) => {
+                let mut c = Command::new("cmd");
+                c.arg("/C").arg(p);
+                c
+            }
+        };
+        cmd.args([
+            "-p",
+            "--input-format",
+            "stream-json",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--permission-prompt-tool",
+            "stdio",
+        ]);
+        if opts.resume.is_some() {
+            cmd.args(["--resume", &session_id]);
+        } else {
+            cmd.args(["--session-id", &session_id]);
+        }
+        if let Some(m) = &opts.model {
+            cmd.args(["--model", m]);
+        }
+        if let Some(m) = &opts.permission_mode {
+            cmd.args(["--permission-mode", m]);
+        }
+        if let Some(e) = &opts.effort {
+            cmd.args(["--effort", e]);
+        }
+        cmd.current_dir(&opts.cwd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        // When OYAKATA itself was launched from inside a Claude Code session, the child must
+        // not inherit that session's identity.
+        for (k, _) in std::env::vars_os() {
+            let key = k.to_string_lossy();
+            if key.starts_with("CLAUDE") && key != "CLAUDE_CONFIG_DIR" {
+                cmd.env_remove(&k);
+            }
+        }
+        #[cfg(windows)]
+        {
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        let mut child = cmd.spawn().with_context(|| format!("spawn {}", exe.display()))?;
+        let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
+        let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
+        let stderr = child.stderr.take().ok_or_else(|| anyhow!("no stderr"))?;
+
+        let view = Arc::new(Mutex::new(RunView {
+            session_id: session_id.clone(),
+            cwd: opts.cwd.display().to_string(),
+            status: "busy".into(),
+            pending: Vec::new(),
+            started_at: now_ms(),
+            model: opts.model.clone(),
+            permission_mode: opts.permission_mode.clone(),
+            effort: opts.effort.clone(),
+            resumed: opts.resume.is_some(),
+            turns: 0,
+            total_cost_usd: 0.0,
+            exit_code: None,
+            last_error: None,
+            stderr_tail: Vec::new(),
+        }));
+        let runner = Arc::new(Runner {
+            view: view.clone(),
+            stdin: Arc::new(AsyncMutex::new(Some(stdin))),
+            child: Arc::new(AsyncMutex::new(child)),
+        });
+        self.runners.lock().unwrap_or_else(|e| e.into_inner()).insert(session_id.clone(), runner.clone());
+
+        runner.write(&user_message(&opts.prompt)).await?;
+        self.notify(&session_id);
+
+        // stdout reader
+        {
+            let reg = self.clone();
+            let view = view.clone();
+            let id = session_id.clone();
+            let child = runner.child.clone();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if let Ok(v) = serde_json::from_str::<Value>(&line) {
+                        if handle_event(&view, &v) {
+                            reg.notify(&id);
+                        }
+                    }
+                }
+                let code = child.lock().await.wait().await.ok().and_then(|s| s.code());
+                {
+                    let mut v = view.lock().unwrap_or_else(|e| e.into_inner());
+                    v.status = "exited".into();
+                    v.exit_code = code;
+                    if code.unwrap_or(0) != 0 && v.last_error.is_none() {
+                        v.last_error = Some(format!("claude exited with code {}", code.unwrap_or(-1)));
+                    }
+                }
+                reg.notify(&id);
+            });
+        }
+        // stderr reader (kept for diagnostics only)
+        {
+            let view = view.clone();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let mut v = view.lock().unwrap_or_else(|e| e.into_inner());
+                    v.stderr_tail.push(line);
+                    if v.stderr_tail.len() > 40 {
+                        v.stderr_tail.remove(0);
+                    }
+                }
+            });
+        }
+        Ok(session_id)
+    }
+
+    pub async fn send(&self, id: &str, text: &str) -> Result<()> {
+        let r = self.get(id)?;
+        {
+            let v = r.view.lock().unwrap_or_else(|e| e.into_inner());
+            match v.status.as_str() {
+                "idle" => {}
+                "exited" => bail!("session has exited; resume it to continue"),
+                "waiting" => bail!("answer the pending permission request first"),
+                _ => bail!("session is busy"),
+            }
+        }
+        r.write(&user_message(text)).await?;
+        r.view.lock().unwrap_or_else(|e| e.into_inner()).status = "busy".into();
+        self.notify(id);
+        Ok(())
+    }
+
+    /// Answer a `can_use_tool` request. `response` is the inner response object
+    /// (`{"behavior":"allow", ...}` or `{"behavior":"deny", ...}`).
+    pub async fn respond_permission(&self, id: &str, request_id: &str, response: Value) -> Result<()> {
+        let r = self.get(id)?;
+        {
+            let mut v = r.view.lock().unwrap_or_else(|e| e.into_inner());
+            let before = v.pending.len();
+            v.pending.retain(|p| p.request_id != request_id);
+            if v.pending.len() == before {
+                bail!("no pending request {request_id}");
+            }
+            if v.pending.is_empty() {
+                v.status = "busy".into();
+            }
+        }
+        r.write(&json!({
+            "type": "control_response",
+            "response": { "subtype": "success", "request_id": request_id, "response": response }
+        }))
+        .await?;
+        self.notify(id);
+        Ok(())
+    }
+
+    pub async fn interrupt(&self, id: &str) -> Result<()> {
+        let r = self.get(id)?;
+        r.write(&json!({
+            "type": "control_request",
+            "request_id": uuid::Uuid::new_v4().to_string(),
+            "request": { "subtype": "interrupt" }
+        }))
+        .await?;
+        Ok(())
+    }
+
+    pub async fn stop(&self, id: &str) -> Result<()> {
+        let r = self.get(id)?;
+        r.shutdown().await;
+        self.notify(id);
+        Ok(())
+    }
+
+    pub async fn stop_all(&self) {
+        let all: Vec<Arc<Runner>> = self.runners.lock().unwrap_or_else(|e| e.into_inner()).values().cloned().collect();
+        for r in all {
+            r.shutdown().await;
+        }
+    }
+
+    /// Forget exited sessions so a resume can start a fresh process under the same id.
+    pub fn forget_exited(&self, id: &str) {
+        let mut map = self.runners.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(r) = map.get(id) {
+            if r.view.lock().unwrap_or_else(|e| e.into_inner()).status == "exited" {
+                map.remove(id);
+            }
+        }
+    }
+}
+
+impl Runner {
+    async fn write(&self, v: &Value) -> Result<()> {
+        let mut guard = self.stdin.lock().await;
+        let stdin = guard.as_mut().ok_or_else(|| anyhow!("session stdin is closed"))?;
+        let mut line = serde_json::to_vec(v)?;
+        line.push(b'\n');
+        stdin.write_all(&line).await.context("write to claude stdin")?;
+        stdin.flush().await.context("flush claude stdin")?;
+        Ok(())
+    }
+
+    /// Close stdin (Claude Code exits at end of input), then kill if it lingers.
+    async fn shutdown(&self) {
+        {
+            let mut guard = self.stdin.lock().await;
+            guard.take();
+        }
+        let mut child = self.child.lock().await;
+        let waited = tokio::time::timeout(Duration::from_secs(4), child.wait()).await;
+        if waited.is_err() {
+            let _ = child.kill().await;
+        }
+        let mut v = self.view.lock().unwrap_or_else(|e| e.into_inner());
+        if v.status != "exited" {
+            v.status = "exited".into();
+        }
+    }
+}
+
+/// Update the view from one stdout event; returns true when something the UI shows changed.
+fn handle_event(view: &Arc<Mutex<RunView>>, v: &Value) -> bool {
+    let kind = v.get("type").and_then(Value::as_str).unwrap_or("");
+    let mut view = view.lock().unwrap_or_else(|e| e.into_inner());
+    match kind {
+        "control_request" => {
+            let req = v.get("request").cloned().unwrap_or(Value::Null);
+            if req.get("subtype").and_then(Value::as_str) != Some("can_use_tool") {
+                return false;
+            }
+            let s = |k: &str| req.get(k).and_then(Value::as_str).map(str::to_string);
+            view.pending.push(PermissionRequest {
+                request_id: v.get("request_id").and_then(Value::as_str).unwrap_or("").to_string(),
+                tool_name: s("tool_name").unwrap_or_else(|| "tool".into()),
+                display_name: s("display_name"),
+                input: req.get("input").cloned().unwrap_or(Value::Null),
+                description: s("description"),
+                suggestions: req.get("permission_suggestions").cloned().unwrap_or(Value::Null),
+                tool_use_id: s("tool_use_id"),
+                requires_user_interaction: req.get("requires_user_interaction").and_then(Value::as_bool).unwrap_or(false),
+                received_at: now_ms(),
+            });
+            view.status = "waiting".into();
+            true
+        }
+        "result" => {
+            view.status = "idle".into();
+            view.turns += 1;
+            if let Some(c) = v.get("total_cost_usd").and_then(Value::as_f64) {
+                view.total_cost_usd = c;
+            }
+            let subtype = v.get("subtype").and_then(Value::as_str).unwrap_or("");
+            if subtype.starts_with("error") {
+                view.last_error = Some(
+                    v.get("result")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| subtype.to_string()),
+                );
+            }
+            true
+        }
+        "assistant" => {
+            if view.status == "idle" {
+                view.status = "busy".into();
+                return true;
+            }
+            false
+        }
+        "system" => {
+            if v.get("subtype").and_then(Value::as_str) == Some("init") {
+                if let Some(m) = v.get("model").and_then(Value::as_str) {
+                    view.model = Some(m.to_string());
+                }
+                return true;
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+fn user_message(text: &str) -> Value {
+    json!({ "type": "user", "message": { "role": "user", "content": text } })
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// Locate the `claude` executable the way a shell would, plus the common install locations.
+pub fn find_claude(explicit: Option<PathBuf>) -> Option<ClaudeExe> {
+    if let Some(p) = explicit.or_else(|| std::env::var_os("OYAKATA_CLAUDE").map(PathBuf::from)) {
+        return Some(classify(p));
+    }
+    if let Some(p) = std::env::var_os("CLAUDE_CODE_EXECPATH").map(PathBuf::from) {
+        if p.is_file() {
+            return Some(classify(p));
+        }
+    }
+    let names: &[&str] = if cfg!(windows) { &["claude.exe", "claude.cmd"] } else { &["claude"] };
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            for n in names {
+                let p = dir.join(n);
+                if p.is_file() {
+                    return Some(classify(p));
+                }
+            }
+        }
+    }
+    let home = crate::paths::home_dir();
+    let mut candidates = vec![home.join(".local").join("bin").join(if cfg!(windows) { "claude.exe" } else { "claude" })];
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        candidates.push(Path::new(&appdata).join("npm").join("claude.cmd"));
+    }
+    candidates.into_iter().find(|p| p.is_file()).map(classify)
+}
+
+fn classify(p: PathBuf) -> ClaudeExe {
+    if p.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat")).unwrap_or(false) {
+        ClaudeExe::Cmd(p)
+    } else {
+        ClaudeExe::Direct(p)
+    }
+}

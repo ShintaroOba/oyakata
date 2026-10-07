@@ -1,0 +1,38 @@
+[package]
+name = "oyakata"
+version = "0.4.0"
+edition = "2021"
+rust-version = "1.80"
+description = "Browser-based command post for Claude Code sessions across repositories: list, switch, and read them as rendered HTML."
+license = "MIT"
+repository = "https://github.com/ShintaroOba/oyakata"
+readme = "README.md"
+keywords = ["claude", "agent", "session", "viewer", "developer-tools"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = ["docs/*"]
+
+[[bin]]
+name = "oyakata"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+clap = { version = "4", features = ["derive"] }
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal", "process", "io-util"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Threading"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
