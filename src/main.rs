@@ -94,7 +94,7 @@ enum Cmd {
         /// Model, e.g. claude-opus-5-5
         #[arg(long)]
         model: Option<String>,
-        /// Permission mode: default | acceptEdits | auto | plan | bypassPermissions
+        /// Permission mode: auto (default) | default | acceptEdits | plan | bypassPermissions
         #[arg(long)]
         mode: Option<String>,
         /// Effort level: low | medium | high | xhigh | max
@@ -137,6 +137,7 @@ enum Cmd {
 }
 
 fn main() -> Result<()> {
+    paths::augment_path();
     let cli = Cli::parse();
     let claude_dir = paths::claude_dir(cli.common.claude_dir.clone());
     match cli.cmd {
@@ -276,6 +277,8 @@ async fn run_server(c: &Common, claude_dir: PathBuf, open_url: Option<String>) -
     let mut state = index::State::new(claude_dir.clone());
     state.ghq_root = gitops::ghq_root(&paths::home_dir());
     state.repo_roots = c.repo_roots.iter().filter(|p| p.is_dir()).cloned().collect();
+    state.load_config();
+    state.purge_trash(Duration::from_secs(30 * 24 * 3600));
     let n = state.initial_scan();
     let live = state.live.len();
     eprintln!(
@@ -298,7 +301,7 @@ async fn run_server(c: &Common, claude_dir: PathBuf, open_url: Option<String>) -
         shutdown: Arc::new(tokio::sync::Notify::new()),
         started_at_ms: now_ms(),
         runners: runners.clone(),
-        default_permission_mode: default_permission_mode(&claude_dir),
+        agent_cache: Mutex::new(std::collections::HashMap::new()),
     });
 
     let addr = format!("{}:{}", c.bind, c.port);
@@ -343,15 +346,10 @@ async fn run_server(c: &Common, claude_dir: PathBuf, open_url: Option<String>) -
     // Sessions started from the browser die with the daemon; end them cleanly so Claude Code
     // flushes its transcript and they can be resumed later.
     runners.stop_all().await;
-    Ok(())
-}
-
-/// `permissions.defaultMode` from Claude Code's settings, used as the default for sessions
-/// started from the browser.
-fn default_permission_mode(claude_dir: &Path) -> Option<String> {
-    let text = fs::read_to_string(claude_dir.join("settings.json")).ok()?;
-    let v: Value = serde_json::from_str(&text).ok()?;
-    v.get("permissions")?.get("defaultMode")?.as_str().map(str::to_string)
+    eprintln!("stopped");
+    // Leave now: dropping the runtime would wait for any blocking task still in flight (a git
+    // call, a console helper), which once kept a stopped daemon alive indefinitely.
+    std::process::exit(0)
 }
 
 /// Start `oyakata serve` as a detached process whose output goes to `<claude_dir>/oyakata.log`.

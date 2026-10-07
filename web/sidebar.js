@@ -1,14 +1,17 @@
-/* OYAKATA sidebar: session list (repositories that have sessions), project explorer for the
-   active repository, and a Git view with commit / push / pull. Views can be switched or
-   stacked. */
+/* OYAKATA sidebar: session list (grouped by repository), project explorer and a Git view
+   (commit / push / pull). The explorer and Git views follow the repository of the session you
+   select. Views can be switched, or stacked with draggable borders between them. */
 (() => {
   'use strict';
   const { $, $$, esc, api, state, bus, LS, toast, ago, sessionTitle, basename, norm, joinPath, modal, confirmDialog, showOutput } = OY;
 
+  const VIEWS = ['sessions', 'explorer', 'search', 'git'];
   const sb = {
     view: LS.get('sb.view', 'sessions'),
     mode: LS.get('sb.mode', 'single'),
     collapsed: new Set(LS.get('sb.collapsed', [])),
+    sizes: LS.get('sb.sizes', { sessions: 1.2, explorer: 1, search: 1, git: 1 }),
+    compact: LS.get('sb.compact', true),
     groupsCollapsed: new Set(LS.get('collapsed', [])),
     filter: '',
     treeFilter: '',
@@ -25,14 +28,59 @@
     const stack = sb.mode === 'stack';
     views.classList.toggle('stack', stack);
     $('#sb-mode').classList.toggle('on', stack);
+    $('#sb-mode').textContent = stack ? '並べて表示中' : '並べて表示';
+    $$('.sb-vsplit', views).forEach((s) => s.remove());
     for (const v of $$('.sb-view', views)) {
       const name = v.dataset.view;
       const visible = stack || name === sb.view;
       v.classList.toggle('visible', visible);
       $('.sb-view-title', v).hidden = !stack;
       v.classList.toggle('collapsed', stack && sb.collapsed.has(name));
+      v.style.flexGrow = stack && !sb.collapsed.has(name) ? String(sb.sizes[name] || 1) : '';
+    }
+    if (stack) {
+      // A drag handle between each pair of neighbouring views.
+      const list = $$('.sb-view', views);
+      for (let i = 1; i < list.length; i++) {
+        const h = document.createElement('div');
+        h.className = 'sb-vsplit';
+        h.dataset.a = list[i - 1].dataset.view;
+        h.dataset.b = list[i].dataset.view;
+        h.title = 'ドラッグで高さを変更';
+        list[i].before(h);
+      }
     }
     for (const b of $$('#sb-switch .sw[data-view]')) b.classList.toggle('active', !stack && b.dataset.view === sb.view);
+  }
+  function startViewResize(h, e) {
+    const a = $(`.sb-view[data-view="${h.dataset.a}"]`);
+    const b = $(`.sb-view[data-view="${h.dataset.b}"]`);
+    if (sb.collapsed.has(a.dataset.view) || sb.collapsed.has(b.dataset.view)) return;
+    e.preventDefault();
+    const ha = a.getBoundingClientRect().height;
+    const hb = b.getBoundingClientRect().height;
+    const ga = sb.sizes[a.dataset.view] || 1;
+    const gb = sb.sizes[b.dataset.view] || 1;
+    const startY = e.clientY;
+    h.classList.add('dragging');
+    document.body.classList.add('resizing-y');
+    const move = (ev) => {
+      const total = ha + hb;
+      const na = Math.min(Math.max(70, ha + ev.clientY - startY), total - 70);
+      sb.sizes[a.dataset.view] = ((ga + gb) * na) / total;
+      sb.sizes[b.dataset.view] = ((ga + gb) * (total - na)) / total;
+      a.style.flexGrow = String(sb.sizes[a.dataset.view]);
+      b.style.flexGrow = String(sb.sizes[b.dataset.view]);
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      h.classList.remove('dragging');
+      document.body.classList.remove('resizing-y');
+      LS.set('sb.sizes', sb.sizes);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
   }
   function show(view) {
     sb.view = view;
@@ -56,22 +104,29 @@
     const unread = state.unread.get(s.id) || 0;
     const name = s.live?.name ? `<span class="chip tiny">${esc(s.live.name)}</span>` : '';
     const owner = s.owner === 'oyakata' ? '<span class="chip tiny owner">親方</span>' : '';
+    const team = s.subagents ? `<span class="chip tiny" title="サブエージェント ${s.subagents}">👥${s.subagents}</span>` : '';
     const sub = s.repo?.subdir ? ` <span class="row-sub">/${esc(s.repo.subdir)}</span>` : '';
     const branch = s.git_branch && s.git_branch !== 'HEAD' ? ` · ${esc(s.git_branch)}` : '';
+    const del = s.status === 'ended' ? '<button type="button" class="row-del" title="このセッションを削除">🗑</button>' : '';
     return `<div class="row ${cls.join(' ')}" draggable="true" data-id="${esc(s.id)}" title="${esc(sessionTitle(s))}">
       <span class="dot"></span>
       <span class="row-title">${esc(sessionTitle(s))}</span>
-      <span class="row-meta">${esc(ago(s.last_at))} · ${s.user_turns}往復${branch}${sub}${name}${owner}</span>
-      ${unread ? `<span class="badge">${unread}</span>` : ''}
+      <span class="row-meta">${esc(ago(s.last_at))} · ${s.user_turns}往復${branch}${sub}${name}${owner}${team}</span>
+      ${unread ? `<span class="badge">${unread}</span>` : ''}${del}
     </div>`;
   }
-  function groupHtml(key, name, sessions, { root = null, title = '', repo = false } = {}) {
+  function groupHtml(key, name, sessions, { root = null, title = '', added = false } = {}) {
     const open = !sb.groupsCollapsed.has(key);
     const isActiveRepo = root && norm(root) === norm(state.activeRepo);
-    const btns = root ? `<button type="button" class="g-btn g-tree" data-root="${esc(root)}" title="ツリーと Git を開く">⊞</button><button type="button" class="g-btn g-add" data-root="${esc(root)}" title="このフォルダで新しいセッション">＋</button>` : '';
+    let btns = '';
+    if (root) {
+      btns = `<button type="button" class="g-btn g-tree" data-root="${esc(root)}" title="ツリーと Git を開く">⊞</button><button type="button" class="g-btn g-add" data-root="${esc(root)}" title="このフォルダで新しいセッション">＋</button>`;
+      if (added) btns += `<button type="button" class="g-btn g-remove" data-root="${esc(root)}" title="一覧から外す（フォルダは消えません）">✕</button>`;
+    }
+    const body = sessions.length ? sessions.map(rowHtml).join('') : `<div class="g-empty">セッションはまだありません。<button type="button" class="link-btn g-add" data-root="${esc(root || '')}">ここで始める</button></div>`;
     return `<details class="group${isActiveRepo ? ' active-repo' : ''}" data-key="${esc(key)}"${root ? ` data-root="${esc(root)}"` : ''}${open ? ' open' : ''}>
-      <summary><span class="caret">▶</span><span class="g-name" title="${esc(title || name)}">${esc(name)}</span>${btns}<span class="g-count">${sessions.length}</span></summary>
-      ${sessions.map(rowHtml).join('')}
+      <summary><span class="caret">▶</span><span class="g-name" title="${esc(title || name)}">${esc(name)}</span>${btns}<span class="g-count">${sessions.length || ''}</span></summary>
+      ${body}
     </details>`;
   }
   function renderSessions() {
@@ -84,38 +139,65 @@
       const map = s.repo?.root ? repoGroups : otherGroups;
       const k = s.repo?.key || s.project_dir;
       let g = map.get(k);
-      if (!g) { g = { key: k, repo: s.repo, sessions: [], last: '' }; map.set(k, g); }
+      if (!g) { g = { key: k, name: s.repo?.name, root: s.repo?.root, sessions: [], last: '' }; map.set(k, g); }
       g.sessions.push(s);
       if ((s.last_at || '') > g.last) g.last = s.last_at || '';
+    }
+    // Folders added from the browser stay listed even before their first session.
+    if (!q) {
+      for (const r of state.repos.filter((x) => x.added)) {
+        if (!repoGroups.has(r.key)) repoGroups.set(r.key, { key: r.key, name: r.name, root: r.root, sessions: [], last: '', added: true });
+        else repoGroups.get(r.key).added = true;
+      }
     }
     const byLast = (a, b) => (b.last > a.last ? 1 : b.last < a.last ? -1 : 0);
     let html = '';
     if (live.length) html += `<section class="sb-section live"><h3>稼働中 <span>${live.length}</span></h3>${live.map(rowHtml).join('')}</section>`;
-    html += '<section class="sb-section"><h3>リポジトリ</h3>';
+    html += '<section class="sb-section"><h3><span>リポジトリ</span><button type="button" class="link-btn add-repo" title="ローカルのフォルダを取り込む / git clone">＋ 追加</button></h3>';
     const rg = [...repoGroups.values()].sort(byLast);
-    for (const g of rg) html += groupHtml(g.key, g.repo.name, g.sessions, { root: g.repo.root, title: g.repo.root, repo: true });
-    if (!rg.length) html += '<div class="sb-empty">リポジトリに紐づくセッションはありません</div>';
+    for (const g of rg) html += groupHtml(g.key, g.name, g.sessions, { root: g.root, title: g.root, added: g.added });
+    if (!rg.length) html += `<div class="sb-empty">${q ? '一致するセッションはありません' : 'リポジトリに紐づくセッションはありません'}</div>`;
     html += '</section>';
     if (otherGroups.size) {
       html += '<section class="sb-section"><h3>その他</h3>';
       for (const g of [...otherGroups.values()].sort(byLast)) {
         const first = g.sessions[0];
-        html += groupHtml(g.key, first.cwd || g.repo?.name || g.key, g.sessions, { root: first.cwd, title: first.cwd });
+        html += groupHtml(g.key, first.cwd || g.name || g.key, g.sessions, { root: first.cwd, title: first.cwd });
       }
       html += '</section>';
     }
     $('#session-list').innerHTML = html;
-    $('#counts').textContent = `${state.sessions.length} セッション · ${state.sessions.filter(isActive).length} 稼働`;
+    const busy = state.sessions.filter((s) => s.status === 'busy').length;
+    const waiting = state.sessions.filter((s) => s.status === 'waiting').length;
+    $('#counts').innerHTML = [busy ? `<span class="c-busy">⚒ ${busy} 作業中</span>` : '', waiting ? `<span class="c-wait">✋ ${waiting} 判断待ち</span>` : '', `${state.sessions.length} 件`].filter(Boolean).join(' · ');
   }
 
   // --------------------------------------------------------- explorer
+  /// `git status` of a repository, shared by the tree and the Git view: in a large repository
+  /// it is the slowest call, and both views ask for it at the same moment.
+  const statusInflight = new Map();
+  function fetchStatus(root, fresh = false) {
+    const k = norm(root);
+    const c = statusInflight.get(k);
+    if (c && !fresh) return c;
+    const p = api.get(`/api/git/status?root=${encodeURIComponent(root)}`);
+    statusInflight.set(k, p);
+    const done = () => setTimeout(() => { if (statusInflight.get(k) === p) statusInflight.delete(k); }, 800);
+    p.then(done, done);
+    return p;
+  }
   function repoChoices() {
     const map = new Map();
+    for (const r of state.repos) if (r.sessions > 0 || r.added) map.set(norm(r.root), { root: r.root, name: r.name });
     for (const s of state.sessions) {
-      if (s.repo?.root && (s.user_turns > 0 || isActive(s))) map.set(norm(s.repo.root), { root: s.repo.root, name: s.repo.name });
-      else if (!s.repo?.root && s.cwd && (s.user_turns > 0 || isActive(s))) map.set(norm(s.cwd), { root: s.cwd, name: s.cwd });
+      if (!(s.user_turns > 0 || isActive(s))) continue;
+      if (s.repo?.root) map.set(norm(s.repo.root), { root: s.repo.root, name: s.repo.name });
+      else if (s.cwd) map.set(norm(s.cwd), { root: s.cwd, name: s.cwd });
     }
-    if (state.activeRepo && !map.has(norm(state.activeRepo))) map.set(norm(state.activeRepo), { root: state.activeRepo, name: basename(state.activeRepo) });
+    if (state.activeRepo && !map.has(norm(state.activeRepo))) {
+      const known = state.repos.find((r) => norm(r.root) === norm(state.activeRepo));
+      map.set(norm(state.activeRepo), { root: state.activeRepo, name: known?.name || basename(state.activeRepo) });
+    }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
   function renderRepoSelect() {
@@ -123,8 +205,11 @@
     const choices = repoChoices();
     sel.innerHTML = choices.map((c) => `<option value="${esc(c.root)}">${esc(c.name)}</option>`).join('') || '<option value="">（リポジトリなし）</option>';
     if (state.activeRepo) sel.value = state.activeRepo;
-    if (!sel.value && choices.length) { sel.value = choices[0].root; OY.setActiveRepo(choices[0].root); }
-    $('#explorer-follow').classList.toggle('on', state.followRepo);
+    else if (choices.length) {
+      // Nothing chosen yet: start with the repository of the most recent session.
+      const recent = state.sessions.find((s) => s.repo?.root && s.user_turns > 0);
+      OY.setActiveRepo(recent?.repo.root || choices[0].root);
+    }
   }
   async function loadTree(root, { force = false } = {}) {
     if (!root) { $('#repo-tree').innerHTML = '<div class="sb-empty">リポジトリを選んでください</div>'; return; }
@@ -133,20 +218,25 @@
     t.root = root;
     t.files = null;
     t.dirs = new Map();
+    sb.expanded = new Set();
     $('#repo-tree').innerHTML = '<div class="loading">読み込み中…</div>';
     try {
-      const st = await api.get(`/api/git/status?root=${encodeURIComponent(root)}`).catch(() => null);
+      // Ask for both at once. The index gives the tracked files without walking the working
+      // tree; the status (which walks it anyway) adds the untracked ones.
+      const [st, tracked] = await Promise.all([
+        fetchStatus(root, force).catch(() => null),
+        api.get(`/api/git/tree?root=${encodeURIComponent(root)}&tracked=1`).then((r) => r.files || []).catch(() => null),
+      ]);
+      if (norm(t.root) !== norm(root)) return;
       t.isGit = !!st;
       t.status = st;
       if (st) {
-        const r = await api.get(`/api/git/tree?root=${encodeURIComponent(root)}`);
-        t.files = r.files || [];
-      } else {
-        t.files = [];
-      }
-      if (norm(sb.git.root) !== norm(root) || !sb.git.status) { sb.git.root = root; sb.git.status = st; }
+        const all = new Set(tracked || []);
+        for (const e of st.entries || []) if (e.untracked) all.add(e.path);
+        t.files = [...all].sort();
+        OY.code.prime(root, t.files);
+      } else t.files = [];
       renderTree();
-      renderGit();
     } catch (e) {
       $('#repo-tree').innerHTML = `<div class="loading err">${esc(e.message)}</div>`;
     }
@@ -196,6 +286,7 @@
     const t = sb.tree;
     const el = $('#repo-tree');
     if (!t.root) { el.innerHTML = '<div class="sb-empty">リポジトリを選んでください</div>'; return; }
+    if (t.files === null) return; // still loading; loadTree renders when it is done
     if (!t.isGit) { renderPlainTree(); return; }
     const stMap = statusMap();
     const dirty = new Set();
@@ -213,14 +304,37 @@
     const render = (node) => {
       let h = '';
       for (const d of [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name))) {
-        const open = sb.expanded.has(d.path);
-        h += `<div class="tnode dir${dirty.has(d.path) ? ' dirty' : ''}" data-dir="${esc(d.path)}" title="${esc(d.path)}"><span class="tcaret">${open ? '▾' : '▸'}</span><span class="ticon">📁</span><span class="tname">${esc(d.name)}</span></div>`;
-        if (open) h += `<div class="tchildren">${render(d)}</div>`;
+        // Compact folders: a chain of folders that each hold only one folder is one row
+        // (src/main/java/jp/co/…), as in VS Code.
+        let cur = d;
+        const names = [d.name];
+        while (sb.compact && cur.dirs.size === 1 && cur.files.length === 0) {
+          cur = cur.dirs.values().next().value;
+          names.push(cur.name);
+        }
+        const open = sb.expanded.has(cur.path);
+        const label = names.map(esc).join('<span class="tsep">/</span>');
+        h += `<div class="tnode dir${dirty.has(cur.path) ? ' dirty' : ''}" data-dir="${esc(cur.path)}" title="${esc(cur.path)}"><span class="tcaret">${open ? '▾' : '▸'}</span><span class="ticon">📁</span><span class="tname">${label}</span></div>`;
+        if (open) h += `<div class="tchildren">${render(cur)}</div>`;
       }
       for (const f of node.files.sort((a, b) => a.name.localeCompare(b.name))) h += fileNode(f.path, f.name, stMap);
       return h;
     };
     el.innerHTML = render(tree) || '<div class="empty-note">ファイルがありません</div>';
+  }
+  /// Show `rel` in the tree: expand its folders, select it, scroll to it.
+  function reveal(rel, root) {
+    if (!rel || (root && norm(root) !== norm(sb.tree.root))) return;
+    const parts = rel.split('/');
+    for (let i = 1; i < parts.length; i++) sb.expanded.add(parts.slice(0, i).join('/'));
+    sb.activeFile = rel;
+    if (!sb.tree.files) return;
+    renderTree();
+    const node = $(`#repo-tree .tnode.file[data-file="${CSS.escape(rel)}"]`);
+    node?.scrollIntoView({ block: 'nearest' });
+  }
+  function paintTreeTools() {
+    $('#tree-compact').classList.toggle('on', sb.compact);
   }
   async function renderPlainTree() {
     // Non-git folder: lazy directory listing.
@@ -250,10 +364,10 @@
   async function loadGit(root, { force = false } = {}) {
     const g = sb.git;
     if (!root) { $('#git-body').innerHTML = '<div class="sb-empty">リポジトリを選んでください</div>'; return; }
-    if (norm(g.root) !== norm(root)) { g.root = root; g.status = null; g.log = []; g.branches = []; g.selected = new Set(); }
+    if (norm(g.root) !== norm(root)) { g.root = root; g.status = null; g.log = []; g.branches = []; g.selected = new Set(); renderGit(); }
     try {
       const [st, lg, br] = await Promise.all([
-        api.get(`/api/git/status?root=${encodeURIComponent(root)}`),
+        fetchStatus(root, force),
         api.get(`/api/git/log?root=${encodeURIComponent(root)}&n=40`).catch(() => ({ commits: [] })),
         api.get(`/api/git/branches?root=${encodeURIComponent(root)}`).catch(() => ({ branches: [] })),
       ]);
@@ -262,18 +376,22 @@
       if (norm(sb.tree.root) === norm(root)) { sb.tree.status = st; if (force) await loadTree(root, { force: true }); else renderTree(); }
       renderGit();
     } catch (e) {
-      $('#git-body').innerHTML = `<div class="loading err">${esc(e.message)}${/not a git/.test(e.message) ? '<div class="muted" style="margin-top:6px">このフォルダは Git リポジトリではありません</div>' : ''}</div>`;
+      if (norm(g.root) !== norm(root)) return;
+      const notGit = /not a git/.test(e.message);
+      $('#git-body').innerHTML = `<div class="git-head"><span class="branch" title="${esc(root)}">${esc(basename(root))}</span></div>${notGit
+        ? '<div class="empty-note">このフォルダは Git リポジトリではありません</div>'
+        : `<div class="loading err">${esc(e.message)}</div>`}`;
     }
   }
   function renderGit() {
     const g = sb.git;
     const st = g.status;
     const body = $('#git-body');
-    if (!g.root || !st) { body.innerHTML = g.root ? '<div class="loading">読み込み中…</div>' : '<div class="sb-empty">リポジトリを選んでください</div>'; return; }
+    if (!g.root || !st) { body.innerHTML = g.root ? `<div class="git-head"><span class="branch">${esc(basename(g.root))}</span></div><div class="loading">読み込み中…</div>` : '<div class="sb-empty">リポジトリを選んでください</div>'; return; }
     const entries = st.entries || [];
     const all = entries.length && entries.every((e) => g.selected.has(e.path));
     const sync = [st.ahead ? `↑${st.ahead}` : '', st.behind ? `↓${st.behind}` : ''].filter(Boolean).join(' ');
-    const name = basename(g.root);
+    const name = state.repos.find((r) => norm(r.root) === norm(g.root))?.name || basename(g.root);
     body.innerHTML = `
       <div class="git-head"><span class="branch" title="${esc(g.root)}">${esc(name)}</span><span class="chip">⎇ ${esc(st.detached ? 'HEAD' : st.branch || '?')}${st.upstream ? ` → ${esc(st.upstream)}` : ''}</span>${sync ? `<span class="chip" title="push 待ち ${st.ahead || 0} / pull 待ち ${st.behind || 0}">${sync}</span>` : ''}</div>
       <div class="git-actions"><button type="button" class="btn small" data-git="refresh">更新</button><button type="button" class="btn small" data-git="pull">Pull</button><button type="button" class="btn small" data-git="push"${!st.ahead && st.upstream ? ' disabled' : ''}>Push</button><button type="button" class="btn small primary" data-git="commit"${entries.length ? '' : ' disabled'}>Commit…</button><button type="button" class="btn small" data-git="new">新しいセッション</button></div>
@@ -335,6 +453,11 @@
     clearTimeout(sb.refreshTimer);
     sb.refreshTimer = setTimeout(() => loadGit(state.activeRepo, { force: true }), 1500);
   }
+  async function removeRepo(root) {
+    if (!(await confirmDialog('一覧から外す', `<code>${esc(root)}</code> を一覧から外します。フォルダやファイルは消えません。`, { label: '外す' }))) return;
+    try { const r = await api.post('/api/repos/remove', { path: root }); state.repos = r.repos || state.repos; bus.emit('repos', state.repos); renderSessions(); }
+    catch (e) { toast(e.message); }
+  }
 
   // ------------------------------------------------------------- bind
   function bind() {
@@ -344,7 +467,8 @@
       if (b.id === 'sb-mode') { sb.mode = sb.mode === 'stack' ? 'single' : 'stack'; LS.set('sb.mode', sb.mode); applyMode(); return; }
       show(b.dataset.view);
     });
-    $('#sb-views').addEventListener('click', (e) => {
+    const views = $('#sb-views');
+    views.addEventListener('click', (e) => {
       const t = e.target.closest('.sb-view-title');
       if (t) {
         const v = t.closest('.sb-view').dataset.view;
@@ -353,6 +477,7 @@
         applyMode();
       }
     });
+    views.addEventListener('mousedown', (e) => { const h = e.target.closest('.sb-vsplit'); if (h) startViewResize(h, e); });
     $('#search').addEventListener('input', (e) => { sb.filter = e.target.value; renderSessions(); });
     const list = $('#session-list');
     list.addEventListener('toggle', (e) => {
@@ -362,10 +487,16 @@
       LS.set('collapsed', [...sb.groupsCollapsed]);
     }, true);
     list.addEventListener('click', (e) => {
+      const addRepo = e.target.closest('.add-repo');
+      if (addRepo) { e.preventDefault(); OY.addRepoDialog(); return; }
       const add = e.target.closest('.g-add');
       if (add) { e.preventDefault(); e.stopPropagation(); OY.newSessionDialog(add.dataset.root); return; }
+      const rm = e.target.closest('.g-remove');
+      if (rm) { e.preventDefault(); e.stopPropagation(); removeRepo(rm.dataset.root); return; }
       const tree = e.target.closest('.g-tree');
-      if (tree) { e.preventDefault(); e.stopPropagation(); OY.setActiveRepo(tree.dataset.root, { explicit: true }); show('explorer'); return; }
+      if (tree) { e.preventDefault(); e.stopPropagation(); OY.setActiveRepo(tree.dataset.root); show('explorer'); return; }
+      const del = e.target.closest('.row-del');
+      if (del) { e.stopPropagation(); OY.deleteSession(del.closest('.row').dataset.id); return; }
       const row = e.target.closest('.row');
       if (row) { OY.chat.open(row.dataset.id); state.unread.delete(row.dataset.id); renderSessions(); }
     });
@@ -375,15 +506,11 @@
       e.dataTransfer.setData('text/oy-open', JSON.stringify(OY.chat.desc(row.dataset.id)));
       e.dataTransfer.effectAllowed = 'copyMove';
     });
-    $('#explorer-repo').addEventListener('change', (e) => OY.setActiveRepo(e.target.value, { explicit: true }));
-    $('#explorer-follow').addEventListener('click', () => {
-      state.followRepo = !state.followRepo;
-      LS.set('followRepo', state.followRepo);
-      $('#explorer-follow').classList.toggle('on', state.followRepo);
-      if (state.followRepo && state.lastChat) { const s = state.byId.get(state.lastChat); if (s?.repo?.root) OY.setActiveRepo(s.repo.root); }
-      toast(state.followRepo ? '開いているチャットのリポジトリに追従します' : '追従を止めました');
-    });
+    $('#explorer-repo').addEventListener('change', (e) => OY.setActiveRepo(e.target.value));
     $('#explorer-refresh').addEventListener('click', () => { loadTree(state.activeRepo, { force: true }); loadGit(state.activeRepo, { force: true }); });
+    $('#explorer-add').addEventListener('click', () => OY.addRepoDialog());
+    $('#tree-compact').addEventListener('click', () => { sb.compact = !sb.compact; LS.set('sb.compact', sb.compact); paintTreeTools(); renderTree(); toast(sb.compact ? '中身が 1 つだけのフォルダをまとめて表示します' : 'フォルダを 1 階層ずつ表示します'); });
+    $('#tree-collapse').addEventListener('click', () => { sb.expanded = new Set(); renderTree(); });
     $('#tree-filter').addEventListener('input', (e) => { sb.treeFilter = e.target.value; renderTree(); });
     const tree = $('#repo-tree');
     tree.addEventListener('click', (e) => {
@@ -428,7 +555,7 @@
     });
 
     bus.on('sessions', () => { renderSessions(); renderRepoSelect(); if (!sb.tree.root && state.activeRepo) { loadTree(state.activeRepo); loadGit(state.activeRepo); } });
-    bus.on('repos', () => renderRepoSelect());
+    bus.on('repos', () => { renderRepoSelect(); renderSessions(); });
     bus.on('active-repo', (root) => { renderRepoSelect(); renderSessions(); loadTree(root); loadGit(root); });
     bus.on('files-changed', (d) => scheduleRefresh(d.root || d.cwd));
     bus.on('layout', () => renderSessions());
@@ -438,8 +565,10 @@
   function init() {
     applyMode();
     bind();
+    paintTreeTools();
+    OY.search.init();
     if (state.activeRepo) { loadTree(state.activeRepo); loadGit(state.activeRepo); }
   }
 
-  OY.sidebar = { init, show, renderSessions, loadTree, loadGit };
+  OY.sidebar = { init, show, renderSessions, loadTree, loadGit, reveal, views: VIEWS, treeRoot: () => sb.tree.root };
 })();

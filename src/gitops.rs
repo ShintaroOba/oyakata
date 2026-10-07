@@ -33,8 +33,50 @@ impl GitOutput {
     }
 }
 
+/// The `git` to run: `OYAKATA_GIT`, then `PATH`, then the usual Git for Windows locations,
+/// so a daemon started with a trimmed environment still finds it.
+fn git_exe() -> &'static Path {
+    static EXE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    EXE.get_or_init(|| {
+        if let Some(p) = std::env::var_os("OYAKATA_GIT").map(PathBuf::from).filter(|p| p.is_file()) {
+            return p;
+        }
+        let name = if cfg!(windows) { "git.exe" } else { "git" };
+        if let Some(path) = std::env::var_os("PATH") {
+            if let Some(p) = std::env::split_paths(&path).map(|d| d.join(name)).find(|p| p.is_file()) {
+                return p;
+            }
+        }
+        if cfg!(windows) {
+            let mut candidates: Vec<PathBuf> = Vec::new();
+            for var in ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"] {
+                if let Some(base) = std::env::var_os(var) {
+                    candidates.push(Path::new(&base).join("Git").join("cmd").join(name));
+                }
+            }
+            if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+                candidates.push(Path::new(&local).join("Programs").join("Git").join("cmd").join(name));
+            }
+            candidates.push(crate::paths::home_dir().join("scoop").join("apps").join("git").join("current").join("cmd").join(name));
+            candidates.push(PathBuf::from(r"C:\Program Files\Git\cmd").join(name));
+            if let Some(p) = candidates.into_iter().find(|p| p.is_file()) {
+                return p;
+            }
+        }
+        PathBuf::from("git")
+    })
+}
+
+fn spawn_error(e: std::io::Error, args: &[&str]) -> anyhow::Error {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        anyhow::anyhow!("git が見つかりません（git {}）。Git をインストールするか、OYAKATA_GIT に git の場所を設定して OYAKATA を再起動してください。", args.first().unwrap_or(&""))
+    } else {
+        anyhow::anyhow!("run git {}: {e}", args.join(" "))
+    }
+}
+
 fn git_command(root: &Path) -> Command {
-    let mut c = Command::new("git");
+    let mut c = Command::new(git_exe());
     c.arg("-C").arg(root).arg("--no-pager");
     c.env("GIT_TERMINAL_PROMPT", "0").env("LC_ALL", "C").env("GIT_PAGER", "cat");
     c.stdin(Stdio::null());
@@ -48,10 +90,7 @@ fn git_command(root: &Path) -> Command {
 }
 
 pub fn run(root: &Path, args: &[&str]) -> Result<GitOutput> {
-    let out = git_command(root)
-        .args(args)
-        .output()
-        .with_context(|| format!("run git {}", args.join(" ")))?;
+    let out = git_command(root).args(args).output().map_err(|e| spawn_error(e, args))?;
     Ok(GitOutput {
         status: out.status.code().unwrap_or(-1),
         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -74,7 +113,7 @@ pub fn run_timeout(root: &Path, args: &[&str], timeout: Duration) -> Result<GitO
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .with_context(|| format!("spawn git {}", args.join(" ")))?;
+        .map_err(|e| spawn_error(e, args))?;
     let start = Instant::now();
     loop {
         if let Some(status) = child.try_wait()? {
@@ -201,8 +240,11 @@ fn parse_header(header: &str, st: &mut RepoStatus) {
 // ---- tree & files ---------------------------------------------------------------------------
 
 /// Tracked plus untracked-but-not-ignored files, relative to the root with forward slashes.
-pub fn tree(root: &Path) -> Result<Vec<String>> {
-    let raw = run_ok(root, &["ls-files", "-co", "--exclude-standard", "-z"])?;
+/// `tracked_only` reads just the index (no walk of the working tree); the tree view adds the
+/// untracked files from `git status`, which it fetches anyway.
+pub fn tree(root: &Path, tracked_only: bool) -> Result<Vec<String>> {
+    let args: &[&str] = if tracked_only { &["ls-files", "-z"] } else { &["ls-files", "-co", "--exclude-standard", "-z"] };
+    let raw = run_ok(root, args)?;
     let mut files: Vec<String> = raw.split('\0').filter(|s| !s.is_empty()).map(str::to_string).collect();
     files.sort();
     files.dedup();
@@ -483,6 +525,112 @@ pub fn branches(root: &Path) -> Result<Vec<Branch>> {
         .collect())
 }
 
+// ---- search ---------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GrepMatch {
+    pub path: String,
+    pub line: u32,
+    pub text: String,
+}
+
+pub struct GrepOptions {
+    pub pattern: String,
+    /// Extended regular expression (`-E`).
+    pub regex: bool,
+    /// Perl-compatible regular expression (`-P`); used by "go to definition".
+    pub pcre: bool,
+    pub case_sensitive: bool,
+    pub word: bool,
+    /// Pathspecs limiting the search (`*.rs`, `src/`, `:!*.lock`).
+    pub pathspecs: Vec<String>,
+    pub max: usize,
+}
+
+const GREP_LINE_CHARS: usize = 400;
+
+/// `git grep` over tracked and untracked (not ignored) files. Output is streamed so a
+/// search that matches everything stops at `max` instead of buffering it all; returns the
+/// matches and whether the list was cut short.
+pub fn grep(root: &Path, o: &GrepOptions) -> Result<(Vec<GrepMatch>, bool)> {
+    use std::io::BufRead;
+    if o.pattern.is_empty() {
+        bail!("検索語が空です");
+    }
+    let mut args: Vec<String> = ["grep", "-n", "--null", "-I", "--untracked", "--no-color"].iter().map(|s| s.to_string()).collect();
+    if !o.case_sensitive {
+        args.push("-i".into());
+    }
+    if o.word {
+        args.push("-w".into());
+    }
+    args.push(if o.pcre { "-P" } else if o.regex { "-E" } else { "-F" }.into());
+    args.push("-e".into());
+    args.push(o.pattern.clone());
+    args.push("--".into());
+    args.extend(o.pathspecs.iter().filter(|p| !p.trim().is_empty()).map(|p| p.trim().to_string()));
+    let mut child = git_command(root)
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| spawn_error(e, &["grep"]))?;
+    let stdout = child.stdout.take().context("no stdout")?;
+    let stderr = child.stderr.take().context("no stderr")?;
+    let err_reader = std::thread::spawn(move || {
+        let mut s = String::new();
+        let _ = std::io::Read::read_to_string(&mut std::io::BufReader::new(stderr), &mut s);
+        s
+    });
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let reader = std::thread::spawn(move || {
+        let mut r = std::io::BufReader::new(stdout);
+        let mut buf = Vec::new();
+        while r.read_until(b'\n', &mut buf).map(|n| n > 0).unwrap_or(false) {
+            if tx.send(std::mem::take(&mut buf)).is_err() {
+                break;
+            }
+        }
+    });
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut out = Vec::new();
+    let mut truncated = false;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(left) {
+            Ok(raw) => {
+                // path \0 line \0 text
+                let line = String::from_utf8_lossy(&raw);
+                let mut parts = line.trim_end_matches(['\n', '\r']).splitn(3, '\0');
+                let (Some(path), Some(n), Some(text)) = (parts.next(), parts.next(), parts.next()) else { continue };
+                let text: String = if text.chars().count() > GREP_LINE_CHARS { text.chars().take(GREP_LINE_CHARS).collect() } else { text.to_string() };
+                out.push(GrepMatch { path: path.to_string(), line: n.parse().unwrap_or(0), text });
+                if out.len() >= o.max {
+                    truncated = true;
+                    break;
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                truncated = true;
+                break;
+            }
+        }
+    }
+    if truncated {
+        let _ = child.kill();
+    }
+    drop(rx);
+    let status = child.wait()?;
+    let _ = reader.join();
+    let err = err_reader.join().unwrap_or_default();
+    // Exit code 1 means "no match"; anything else unexpected is a bad pattern or pathspec.
+    if !truncated && !status.success() && status.code() != Some(1) {
+        bail!("{}", err.trim().lines().last().unwrap_or("git grep failed"));
+    }
+    Ok((out, truncated))
+}
+
 // ---- write operations ----------------------------------------------------------------------
 
 pub fn commit(root: &Path, message: &str, paths: &[String]) -> Result<String> {
@@ -531,6 +679,48 @@ pub fn pull(root: &Path) -> Result<String> {
         bail!("git pull failed: {}", out.combined());
     }
     Ok(out.combined())
+}
+
+/// `git clone <url> <dest>`. The destination must not exist yet (or be an empty folder).
+pub fn clone(url: &str, dest: &Path) -> Result<String> {
+    let url = url.trim();
+    if url.is_empty() || url.starts_with('-') || url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        bail!("リポジトリの URL が正しくありません");
+    }
+    if dest.exists() && std::fs::read_dir(dest).map(|mut d| d.next().is_some()).unwrap_or(true) {
+        bail!("{} は既に存在します。別の場所を指定してください。", dest.display());
+    }
+    let parent = dest.parent().filter(|p| !p.as_os_str().is_empty()).context("clone 先のフォルダが正しくありません")?;
+    std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    let dest_s = dest.to_string_lossy().into_owned();
+    let out = run_timeout(parent, &["clone", "--quiet", "--", url, &dest_s], Duration::from_secs(15 * 60))?;
+    if !out.ok() {
+        bail!("git clone に失敗しました: {}", out.combined());
+    }
+    Ok(out.combined())
+}
+
+/// Where a clone of `url` goes under `root`: ghq layout (`host/owner/name`) when `ghq` is
+/// true, otherwise just `name`.
+pub fn clone_dest(root: &Path, url: &str, ghq: bool) -> Option<PathBuf> {
+    let u = url.trim().trim_end_matches('/');
+    let u = u.strip_suffix(".git").unwrap_or(u);
+    let rest = match u.split_once("://") {
+        Some((_, r)) => r.rsplit_once('@').map(|(_, h)| h).unwrap_or(r).to_string(),
+        // scp-like: git@host:owner/name
+        None => u.rsplit_once('@').map(|(_, h)| h).unwrap_or(u).replacen(':', "/", 1),
+    };
+    let parts: Vec<&str> = rest.split(['/', '\\']).filter(|s| !s.is_empty() && *s != "." && *s != "..").collect();
+    let name = parts.last()?;
+    if !ghq || parts.len() < 3 {
+        return Some(root.join(name));
+    }
+    let host = parts[0].split(':').next().unwrap_or(parts[0]);
+    let mut p = root.join(host);
+    for seg in &parts[1..] {
+        p = p.join(seg);
+    }
+    Some(p)
 }
 
 // ---- discovery -----------------------------------------------------------------------------
@@ -628,5 +818,14 @@ mod tests {
         assert!(safe_join(root, "/etc/passwd").is_err());
         assert!(safe_join(root, "C:/x").is_err());
         assert!(safe_join(root, "src/main.rs").is_ok());
+    }
+
+    #[test]
+    fn clone_destinations() {
+        let r = Path::new("/g");
+        assert_eq!(clone_dest(r, "https://github.com/acme/widget.git", true), Some(PathBuf::from("/g/github.com/acme/widget")));
+        assert_eq!(clone_dest(r, "git@github.com:acme/widget.git", true), Some(PathBuf::from("/g/github.com/acme/widget")));
+        assert_eq!(clone_dest(r, "ssh://git@gitlab.example.com:2222/team/app", true), Some(PathBuf::from("/g/gitlab.example.com/team/app")));
+        assert_eq!(clone_dest(r, "https://github.com/acme/widget", false), Some(PathBuf::from("/g/widget")));
     }
 }

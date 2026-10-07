@@ -107,6 +107,22 @@ pub struct TranscriptMeta {
     pub edited_files: BTreeMap<String, EditStat>,
     /// claude.ai artifact links that appeared in tool results or assistant text.
     pub artifacts: Vec<String>,
+    /// Tokens in the context window after the latest response (input + cache + output).
+    pub context_tokens: u64,
+    /// The session's permission mode as last recorded (`auto`, `default`, `plan`, …).
+    pub permission_mode: Option<String>,
+    /// Effort level of the latest response.
+    pub effort: Option<String>,
+    /// `Tool: summary` of the most recent tool call, and when it was made.
+    pub last_tool: Option<String>,
+    pub last_tool_at: Option<String>,
+    /// `stop_reason` of the latest assistant line (`end_turn`, `tool_use`, or none mid-stream).
+    pub last_stop_reason: Option<String>,
+    /// tool_use ids of Agent/Task calls, so nested subagents can be attached to their parent.
+    pub agent_calls: Vec<String>,
+    /// A subagent reported back (`SubagentHandback`) or stopped (`SubagentStop` hook) and has
+    /// not been given new work since.
+    pub finished: bool,
 }
 
 impl TranscriptMeta {
@@ -178,6 +194,12 @@ struct RawLine {
     continued_in: Option<String>,
     #[serde(default, rename = "compactMetadata")]
     compact_metadata: Option<Value>,
+    #[serde(default, rename = "permissionMode")]
+    permission_mode: Option<String>,
+    #[serde(default)]
+    effort: Option<String>,
+    #[serde(default)]
+    attachment: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -188,6 +210,8 @@ struct RawMessage {
     content: Value,
     #[serde(default)]
     usage: Option<RawUsage>,
+    #[serde(default)]
+    stop_reason: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -198,6 +222,8 @@ struct RawUsage {
     output_tokens: Option<u64>,
     #[serde(default)]
     cache_read_input_tokens: Option<u64>,
+    #[serde(default)]
+    cache_creation_input_tokens: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -240,6 +266,13 @@ impl Transcript {
     /// A parser for `subagents/agent-*.jsonl`, whose lines are all marked as sidechain.
     pub fn for_agent() -> Self {
         let mut t = Self::new(true);
+        t.include_sidechain = true;
+        t
+    }
+
+    /// Like `for_agent`, but keeps only metadata (for the team view's status cards).
+    pub fn for_agent_meta() -> Self {
+        let mut t = Self::new(false);
         t.include_sidechain = true;
         t
     }
@@ -307,6 +340,17 @@ impl Transcript {
                 }
             }
             "continued-in" => self.meta.continued_in = line.continued_in,
+            "permission-mode" => {
+                if let Some(m) = line.permission_mode.filter(|m| !m.is_empty()) {
+                    self.meta.permission_mode = Some(m);
+                }
+            }
+            "attachment" => {
+                let event = line.attachment.as_ref().and_then(|a| a.get("hookEvent")).and_then(Value::as_str);
+                if event == Some("SubagentStop") {
+                    self.meta.finished = true;
+                }
+            }
             "user" => {
                 if line.is_sidechain && !self.include_sidechain {
                     return;
@@ -349,6 +393,9 @@ impl Transcript {
         }
         if let Some(v) = &line.version {
             self.meta.version = Some(v.clone());
+        }
+        if let Some(m) = line.permission_mode.as_ref().filter(|m| !m.is_empty()) {
+            self.meta.permission_mode = Some(m.clone());
         }
     }
 
@@ -406,6 +453,7 @@ impl Transcript {
         let meta = line.is_meta || looks_meta(&text);
         let compact_summary = line.is_compact_summary;
         if !meta && !compact_summary {
+            self.meta.finished = false;
             self.meta.user_turns += 1;
             if self.meta.first_prompt.is_none() {
                 self.meta.first_prompt = Some(snippet(&text, SNIPPET_CHARS));
@@ -426,11 +474,22 @@ impl Transcript {
                 self.meta.model = Some(model.to_string());
             }
         }
+        if let Some(e) = line.effort.as_ref().filter(|e| !e.is_empty()) {
+            self.meta.effort = Some(e.clone());
+        }
         if let Some(u) = msg.usage {
             self.meta.input_tokens += u.input_tokens.unwrap_or(0);
             self.meta.output_tokens += u.output_tokens.unwrap_or(0);
             self.meta.cache_read_tokens += u.cache_read_input_tokens.unwrap_or(0);
+            let context = u.input_tokens.unwrap_or(0)
+                + u.cache_creation_input_tokens.unwrap_or(0)
+                + u.cache_read_input_tokens.unwrap_or(0)
+                + u.output_tokens.unwrap_or(0);
+            if context > 0 {
+                self.meta.context_tokens = context;
+            }
         }
+        self.meta.last_stop_reason = msg.stop_reason.clone();
         let Value::Array(blocks) = msg.content else { return };
         for b in blocks {
             let Ok(block) = serde_json::from_value::<RawBlock>(b) else { continue };
@@ -458,8 +517,16 @@ impl Transcript {
                     let id = block.id.unwrap_or_default();
                     self.meta.tool_calls += 1;
                     self.note_edit(&name, &input);
+                    let summary = summarize_tool(&name, &input);
+                    self.meta.last_tool = Some(if summary.is_empty() { name.clone() } else { format!("{name}: {summary}") });
+                    self.meta.last_tool_at = ts.clone();
+                    if (name == "Agent" || name == "Task") && !id.is_empty() && self.meta.agent_calls.len() < 500 {
+                        self.meta.agent_calls.push(id.clone());
+                    }
+                    if name == "SubagentHandback" {
+                        self.meta.finished = true;
+                    }
                     if self.keep_items {
-                        let summary = summarize_tool(&name, &input);
                         let idx = self.items.len();
                         if !id.is_empty() {
                             self.tool_index.insert(id.clone(), idx);
@@ -501,6 +568,9 @@ impl Transcript {
             Some("compact_boundary") => {
                 self.meta.compactions += 1;
                 let cm = line.compact_metadata.unwrap_or(Value::Null);
+                if let Some(post) = cm.get("postTokens").and_then(Value::as_u64) {
+                    self.meta.context_tokens = post;
+                }
                 self.push(
                     Item::Compact {
                         ts,
@@ -767,6 +837,35 @@ mod tests {
         let stat = &t.meta.edited_files["/p/a.rs"];
         assert_eq!((stat.edits, stat.writes), (1, 1));
         assert_eq!(t.meta.artifacts, vec!["https://claude.ai/artifact/AbC123", "https://claude.ai/artifact/Zz9"]);
+    }
+
+    #[test]
+    fn tracks_context_mode_effort_and_last_tool() {
+        let (t, _) = feed_all(
+            &[
+                r#"{"type":"permission-mode","permissionMode":"plan","sessionId":"s"}"#,
+                r#"{"type":"assistant","effort":"xhigh","message":{"model":"claude-opus-5-5","role":"assistant","stop_reason":"tool_use","content":[{"type":"tool_use","id":"t1","name":"Agent","input":{"description":"look around","prompt":"p"}}],"usage":{"input_tokens":2,"cache_creation_input_tokens":1000,"cache_read_input_tokens":20000,"output_tokens":50}}}"#,
+                r#"{"type":"permission-mode","permissionMode":"auto","sessionId":"s"}"#,
+            ],
+            false,
+        );
+        assert_eq!(t.meta.context_tokens, 21_052);
+        assert_eq!(t.meta.permission_mode.as_deref(), Some("auto"));
+        assert_eq!(t.meta.effort.as_deref(), Some("xhigh"));
+        assert_eq!(t.meta.last_tool.as_deref(), Some("Agent: look around"));
+        assert_eq!(t.meta.last_stop_reason.as_deref(), Some("tool_use"));
+        assert_eq!(t.meta.agent_calls, vec!["t1"]);
+        assert!(!t.meta.finished);
+
+        let mut agent = Transcript::for_agent_meta();
+        let lines = [
+            r#"{"type":"user","isSidechain":true,"message":{"role":"user","content":"investigate"}}"#,
+            r#"{"type":"assistant","isSidechain":true,"message":{"role":"assistant","stop_reason":null,"content":[{"type":"tool_use","id":"h","name":"SubagentHandback","input":{"report":"done"}}]}}"#,
+        ];
+        agent.feed((lines.join("\n") + "\n").as_bytes());
+        assert!(agent.meta.finished);
+        agent.feed(b"{\"type\":\"user\",\"isSidechain\":true,\"message\":{\"role\":\"user\",\"content\":\"one more thing\"}}\n");
+        assert!(!agent.meta.finished);
     }
 
     #[test]

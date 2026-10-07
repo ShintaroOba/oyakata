@@ -1,11 +1,13 @@
 /* OYAKATA workbench: a tree of split panes holding tabs (chat, file, diff, url…), with
-   drag-and-drop to move tabs between panes or split a pane on any edge. */
+   drag-and-drop to move tabs between panes or split a pane on any edge. Every repository
+   has its own workspace (its own panes and tabs); selecting a session of another repository
+   swaps the whole workbench to that repository's workspace. */
 (() => {
   'use strict';
   const { $, $$, esc, LS, toast } = OY;
 
-  const kinds = new Map();   // kind → factory(desc, tab) → { el, onShow?, onHide?, dispose?, isDirty?, focus? }
-  const tabs = new Map();    // key → { desc, el, inst, dirty }
+  const kinds = new Map();   // kind → factory(desc, tab) → { el, onShow?, onHide?, onFocus?, dispose?, isDirty?, focus? }
+  let tabs = new Map();      // key → { desc, el, inst, dirty } — of the current workspace
   let layout = null;
   let paneSeq = 0;
   let activePaneId = null;
@@ -89,6 +91,7 @@
     pane.active = desc.key;
     activePaneId = pane.id;
     render();
+    tab.inst?.onFocus?.();
     save();
     return tab;
   }
@@ -129,6 +132,7 @@
     if (paneEl) refreshPane(pane, paneEl); else render();
     $$('.pane', rootEl).forEach((p) => p.classList.toggle('focused', p.dataset.pane === pane.id));
     tabs.get(key)?.inst?.onShow?.();
+    tabs.get(key)?.inst?.onFocus?.();
     save();
   }
   async function close(key, { force = false } = {}) {
@@ -223,7 +227,10 @@
       if (!empty) {
         empty = document.createElement('div');
         empty.className = 'pane-empty';
-        empty.innerHTML = `<img class="brand-mark big" src="/assets/icon.svg" alt=""><div>左の一覧からセッションやファイルを開くか、ここにドラッグしてください。</div><div class="hint"><kbd>/</kbd> 検索 &nbsp; <kbd>t</kbd> テーマ &nbsp; タブをドラッグして分割</div>`;
+        const repo = OY.state.repos.find((r) => OY.norm(r.root) === wsKey);
+        const where = wsKey && wsKey !== '_' ? `<div class="pe-ws">📁 ${esc(repo?.name || OY.basename(OY.state.activeRepo || wsKey))} で開いているタブはありません</div>` : '';
+        empty.innerHTML = `<img class="brand-mark big" src="/assets/icon.svg" alt=""><div class="pe-greet">${esc(OY.greeting())}</div>${where}<div>左の一覧からセッションを開くか、<button type="button" class="link-btn pe-new">新しいセッション</button>を始めてください。</div><div class="hint"><kbd>Ctrl</kbd>+<kbd>P</kbd> ファイル &nbsp; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> 全文検索 &nbsp; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> コマンド</div>`;
+        $('.pe-new', empty).addEventListener('click', () => OY.newSessionDialog(OY.state.activeRepo));
         body.appendChild(empty);
       }
     } else if (empty) empty.remove();
@@ -270,44 +277,115 @@
     OY.bus.emit('layout');
   }
 
-  // --------------------------------------------------------- persistence
+  // ------------------------------------------------- workspaces & persistence
+  // One workspace per repository (key: normalized root). Only the current one is in the DOM;
+  // others are parked in `stash` with their instances alive (chats keep streaming, unsaved
+  // edits survive), and every workspace's layout is saved to localStorage.
+  const MAX_PARKED = 8;
+  let wsKey = null;
+  let restored = false;
+  const stash = new Map(); // key → { layout, tabs, activePaneId, at }
+  const keyOf = (root) => (root ? OY.norm(root) : '_');
+
   function serialize(node) {
     if (node.type === 'pane') return { type: 'pane', id: node.id, role: node.role, active: node.active, tabs: node.tabs.map((k) => tabs.get(k)?.desc).filter(Boolean) };
     return { type: 'split', dir: node.dir, sizes: node.sizes, children: node.children.map(serialize) };
   }
-  function save() { LS.set('wb.layout', serialize(layout)); LS.set('wb.active', activePaneId); }
-  function restore() {
-    const saved = LS.get('wb.layout', null);
-    if (saved) {
-      try {
-        const build = (n) => {
-          if (n.type === 'pane') {
-            const num = parseInt(String(n.id || '').replace(/^p/, ''), 10);
-            if (num > paneSeq) paneSeq = num;
-            const pane = { type: 'pane', id: n.id || ('p' + (++paneSeq)), role: n.role || null, tabs: [], active: null };
-            for (const d of n.tabs || []) {
-              if (!d?.key || !d?.kind || tabs.has(d.key)) continue;
-              tabs.set(d.key, { desc: d, el: null, inst: null, dirty: false });
-              pane.tabs.push(d.key);
-            }
-            pane.active = pane.tabs.includes(n.active) ? n.active : (pane.tabs[pane.tabs.length - 1] || null);
-            return pane;
-          }
-          const children = (n.children || []).map(build).filter(Boolean);
-          if (!children.length) return null;
-          if (children.length === 1) return children[0];
-          const sizes = Array.isArray(n.sizes) && n.sizes.length === children.length ? n.sizes : children.map(() => 1 / children.length);
-          return { type: 'split', dir: n.dir === 'row' ? 'row' : 'col', children, sizes };
-        };
-        layout = build(saved) || newPane();
-      } catch (e) {
-        console.warn('layout restore failed', e);
-        layout = newPane();
+  function save() {
+    if (!restored) return;
+    const all = LS.get('wb.layouts', {});
+    all[wsKey] = { layout: serialize(layout), active: activePaneId, at: Date.now() };
+    const keys = Object.keys(all);
+    if (keys.length > 40) keys.sort((a, b) => (all[a].at || 0) - (all[b].at || 0)).slice(0, keys.length - 40).forEach((k) => delete all[k]);
+    LS.set('wb.layouts', all);
+    LS.set('wb.ws', wsKey);
+  }
+  /// Rebuild a saved layout, registering its tabs (instances are created lazily on render).
+  function build(n) {
+    if (n.type === 'pane') {
+      const num = parseInt(String(n.id || '').replace(/^p/, ''), 10);
+      if (num > paneSeq) paneSeq = num;
+      const pane = { type: 'pane', id: n.id || ('p' + (++paneSeq)), role: n.role || null, tabs: [], active: null };
+      for (const d of n.tabs || []) {
+        if (!d?.key || !d?.kind || tabs.has(d.key)) continue;
+        tabs.set(d.key, { desc: d, el: null, inst: null, dirty: false });
+        pane.tabs.push(d.key);
       }
-    } else layout = newPane();
-    activePaneId = LS.get('wb.active', null);
-    if (!findPane(activePaneId)) activePaneId = panes()[0].id;
+      pane.active = pane.tabs.includes(n.active) ? n.active : (pane.tabs[pane.tabs.length - 1] || null);
+      return pane;
+    }
+    const children = (n.children || []).map(build).filter(Boolean);
+    if (!children.length) return null;
+    if (children.length === 1) return children[0];
+    const sizes = Array.isArray(n.sizes) && n.sizes.length === children.length ? n.sizes : children.map(() => 1 / children.length);
+    return { type: 'split', dir: n.dir === 'row' ? 'row' : 'col', children, sizes };
+  }
+  function loadWorkspace(key) {
+    tabs = new Map();
+    const saved = LS.get('wb.layouts', {})[key];
+    layout = null;
+    if (saved?.layout) {
+      try { layout = build(saved.layout); } catch (e) { console.warn('layout restore failed', e); }
+    }
+    if (!layout) layout = newPane();
+    activePaneId = saved?.active && findPane(saved.active) ? saved.active : panes()[0].id;
+  }
+  function restore() {
+    const key = OY.state.activeRepo ? keyOf(OY.state.activeRepo) : (LS.get('wb.ws', null) || '_');
+    // The single layout of earlier versions becomes this repository's workspace.
+    const legacy = LS.get('wb.layout', null);
+    if (legacy && !LS.get('wb.layouts', null)) LS.set('wb.layouts', { [key]: { layout: legacy, active: LS.get('wb.active', null), at: Date.now() } });
+    LS.del('wb.layout');
+    LS.del('wb.active');
+    wsKey = key;
+    restored = true;
+    loadWorkspace(key);
     render();
+    save();
+  }
+  /// Show the workspace of `root`, parking the current one.
+  function switchWorkspace(root) {
+    const key = keyOf(root);
+    if (!restored || key === wsKey) return false;
+    save();
+    for (const t of tabs.values()) {
+      if (t.el && !t.el.hidden) t.inst?.onHide?.();
+      t.el?.remove();
+    }
+    stash.set(wsKey, { layout, tabs, activePaneId, at: Date.now() });
+    wsKey = key;
+    const parked = stash.get(key);
+    if (parked) {
+      stash.delete(key);
+      ({ layout, tabs, activePaneId } = parked);
+      for (const t of tabs.values()) if (t.el) t.el.hidden = true;
+    } else loadWorkspace(key);
+    trimStash();
+    rootEl.replaceChildren();
+    render();
+    save();
+    OY.bus.emit('workspace', { key, root });
+    return true;
+  }
+  /// Keep a bounded number of parked workspaces alive; older ones live on only in storage.
+  function trimStash() {
+    while (stash.size > MAX_PARKED) {
+      const oldest = [...stash.entries()].filter(([, w]) => ![...w.tabs.values()].some((t) => t.dirty)).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!oldest) return;
+      for (const t of oldest[1].tabs.values()) { t.inst?.dispose?.(); t.el?.remove(); }
+      stash.delete(oldest[0]);
+    }
+  }
+  function activeTab() {
+    const pane = findPane(activePaneId);
+    return pane?.active ? tabs.get(pane.active) || null : null;
+  }
+  /// Move the active tab into a new pane beside it (Ctrl+\).
+  function splitActive(zone = 'right') {
+    const pane = findPane(activePaneId);
+    if (!pane?.active) return;
+    if (pane.tabs.length < 2) { toast('分割するには、このペインにタブが 2 つ以上必要です'); return; }
+    placeKey(pane.active, pane.id, zone);
   }
 
   // ---------------------------------------------------------------- DnD
@@ -348,6 +426,8 @@
       if (paneEl && paneEl.dataset.pane !== activePaneId) {
         activePaneId = paneEl.dataset.pane;
         $$('.pane', rootEl).forEach((p) => p.classList.toggle('focused', p === paneEl));
+        const pane = findPane(activePaneId);
+        if (pane?.active) tabs.get(pane.active)?.inst?.onFocus?.();
         save();
       }
       const sp = e.target.closest('.wb-splitter');
@@ -405,7 +485,9 @@
       if (payload.key) moveTab(payload.key, paneEl.dataset.pane, zone);
       else if (payload.desc) openAt(payload.desc, paneEl.dataset.pane, zone);
     });
-    window.addEventListener('resize', () => { for (const p of panes()) tabs.get(p.active)?.inst?.onShow?.(); });
+    const refit = () => { for (const p of panes()) tabs.get(p.active)?.inst?.onShow?.(); };
+    window.addEventListener('resize', refit);
+    OY.bus.on('layout-resized', refit);
   }
   function startResize(sp, e) {
     e.preventDefault();
@@ -444,7 +526,12 @@
   function init(el) {
     rootEl = el;
     bind();
+    // The tree and Git views follow the active repository; so does the workbench.
+    OY.bus.on('active-repo', (root) => switchWorkspace(root));
   }
 
-  OY.wb = { init, restore, reset, registerKind, open, openAt, close, activate, setTitle, setDirty, has, get, panes: () => panes(), activePane: () => activePaneId };
+  OY.wb = {
+    init, restore, reset, registerKind, open, openAt, close, activate, setTitle, setDirty, has, get, activeTab, splitActive, switchWorkspace,
+    panes: () => panes(), activePane: () => activePaneId, workspace: () => wsKey,
+  };
 })();

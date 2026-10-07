@@ -40,6 +40,8 @@
     let cm = null;
     let mode = isDoc ? 'preview' : 'edit';
     let lastSaved = '';
+    let pendingReveal = desc.data.line ? { line: desc.data.line, col: desc.data.col, select: desc.data.select } : null;
+    let find = null;
     const unsubs = [];
 
     const setDirty = () => OY.wb.setDirty(desc.key, !!cm && cm.getValue() !== lastSaved);
@@ -62,11 +64,13 @@
       else if (mode === 'preview') body = `<iframe sandbox="allow-scripts allow-popups allow-forms" src="${rawUrl}" title="${esc(path)}"></iframe>`;
       else if (mode === 'render') body = `<div class="ev-content md">${md(cm ? cm.getValue() : file.content || '')}</div>`;
       else body = '<div class="cm-wrap"></div>';
-      const title = `<span class="path" title="${esc(path)}">${esc(rel != null && root ? rel : path)}</span><span>${sizeStr(file.size)}${file.truncated ? ' · 先頭 2MB のみ（保存不可）' : ''}</span>`;
+      const title = `<span class="path" title="${esc(path)}">${esc(rel != null && root ? rel : path)}</span><span class="ev-size">${sizeStr(file.size)}${file.truncated ? ' · 先頭 2MB のみ（保存不可）' : ''}</span>`;
       const keepCm = cm && mode === 'edit' && $('.cm-wrap', el);
       if (!keepCm) {
         const value = cm ? cm.getValue() : null;
         el.innerHTML = bar([title, ...btns]) + body;
+        find = null;
+        cm = null;
         if (mode === 'edit' && !file.binary) {
           cm = CodeMirror($('.cm-wrap', el), {
             value: value ?? file.content ?? '',
@@ -80,16 +84,152 @@
             indentUnit: 2,
             tabSize: 4,
             readOnly: file.truncated ? 'nocursor' : false,
-            extraKeys: { 'Ctrl-S': save, 'Cmd-S': save, Tab: (c) => c.execCommand('insertSoftTab') },
+            extraKeys: {
+              'Ctrl-S': save, 'Cmd-S': save, Tab: (c) => c.execCommand('insertSoftTab'),
+              'Ctrl-F': () => openFind(), 'Cmd-F': () => openFind(), F3: () => findStep(1), 'Shift-F3': () => findStep(-1),
+              'Ctrl-G': () => OY.palette.open(':'), F12: () => goDef(), 'Shift-F12': () => goRefs(),
+              'Alt-Left': () => OY.code.back(), 'Alt-Right': () => OY.code.forward(),
+            },
           });
           cm.on('change', setDirty);
-          setTimeout(() => cm.refresh(), 0);
+          // Ctrl+click on a name: go to its definition (as in VS Code).
+          cm.on('mousedown', (c, e) => {
+            if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return;
+            const pos = c.coordsChar({ left: e.clientX, top: e.clientY });
+            const w = c.findWordAt(pos);
+            const sym = c.getRange(w.anchor, w.head);
+            if (!/^[\w$]+$/.test(sym)) return;
+            e.preventDefault();
+            c.setCursor(pos);
+            goDef(sym);
+          });
+          setTimeout(() => { cm?.refresh(); applyReveal(); }, 0);
         }
         observeMermaid(el);
       } else {
         $('.ev-bar', el).outerHTML = bar([title, ...btns]);
       }
     };
+    const wordAtCursor = () => {
+      if (!cm) return '';
+      const w = cm.findWordAt(cm.getCursor());
+      return cm.getRange(w.anchor, w.head);
+    };
+    const goDef = (sym) => OY.code.definition(sym || wordAtCursor(), { root, path, line: cm ? cm.getCursor().line + 1 : null });
+    const goRefs = () => OY.code.references(wordAtCursor(), root);
+
+    /// Put the cursor on `line` (1-based), select `select` on that line if present, and flash.
+    function reveal(line, col, select) {
+      pendingReveal = { line, col, select };
+      applyReveal();
+    }
+    function applyReveal() {
+      if (!pendingReveal || !cm) return;
+      const { line, col, select } = pendingReveal;
+      pendingReveal = null;
+      const ln = Math.max(0, Math.min(cm.lineCount() - 1, (line || 1) - 1));
+      const text = cm.getLine(ln) || '';
+      let from = Math.max(0, (col || 1) - 1);
+      let to = from;
+      if (select) {
+        const i = text.indexOf(select);
+        const j = i >= 0 ? i : text.toLowerCase().indexOf(select.toLowerCase());
+        if (j >= 0) { from = j; to = j + select.length; }
+      }
+      cm.focus();
+      cm.setSelection({ line: ln, ch: to }, { line: ln, ch: from });
+      const h = cm.getScrollInfo().clientHeight;
+      cm.scrollIntoView({ line: ln, ch: from }, Math.max(60, h / 3));
+      const handle = cm.addLineClass(ln, 'background', 'cm-oy-flash');
+      setTimeout(() => cm?.removeLineClass(handle, 'background', 'cm-oy-flash'), 1600);
+    }
+
+    // ----------------------------------------------------------- find (Ctrl+F)
+    function openFind() {
+      if (!cm) return;
+      if (!find) {
+        const fb = div('findbar', '<input type="text" class="fd-q" placeholder="検索" spellcheck="false"><span class="fd-count"></span><button type="button" class="fd-b" data-fd="cs" title="大文字と小文字を区別">Aa</button><button type="button" class="fd-b" data-fd="prev" title="前へ（Shift+Enter）">↑</button><button type="button" class="fd-b" data-fd="next" title="次へ（Enter）">↓</button><button type="button" class="fd-b" data-fd="close" title="閉じる（Esc）">✕</button>');
+        $('.ev-bar', el).after(fb);
+        find = { el: fb, input: $('.fd-q', fb), marks: [], hits: [], cur: -1, cs: false, curMark: null };
+        find.input.addEventListener('input', () => runFind());
+        find.input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); findStep(e.shiftKey ? -1 : 1); }
+          else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeFind(); }
+        });
+        fb.addEventListener('click', (e) => {
+          const b = e.target.closest('.fd-b');
+          if (!b) return;
+          if (b.dataset.fd === 'close') closeFind();
+          else if (b.dataset.fd === 'cs') { find.cs = !find.cs; b.classList.toggle('on', find.cs); runFind(); }
+          else findStep(b.dataset.fd === 'prev' ? -1 : 1);
+        });
+      }
+      const selText = cm.getSelection();
+      if (selText && !selText.includes('\n')) find.input.value = selText;
+      find.input.focus();
+      find.input.select();
+      runFind();
+    }
+    function clearMarks() {
+      if (!find) return;
+      find.marks.forEach((m) => m.clear());
+      find.curMark?.clear();
+      find.marks = [];
+      find.curMark = null;
+    }
+    function runFind() {
+      clearMarks();
+      const q = find.input.value;
+      find.hits = [];
+      find.cur = -1;
+      if (q) {
+        const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), find.cs ? 'g' : 'gi');
+        cm.eachLine((lh) => {
+          if (find.hits.length >= 5000) return;
+          const ln = cm.getLineNumber(lh);
+          const text = lh.text;
+          re.lastIndex = 0;
+          let m;
+          while ((m = re.exec(text)) && find.hits.length < 5000) find.hits.push({ line: ln, from: m.index, to: m.index + m[0].length });
+        });
+        cm.operation(() => {
+          for (const h of find.hits.slice(0, 3000)) find.marks.push(cm.markText({ line: h.line, ch: h.from }, { line: h.line, ch: h.to }, { className: 'cm-oy-match' }));
+        });
+        const c = cm.getCursor('from');
+        const next = find.hits.findIndex((h) => h.line > c.line || (h.line === c.line && h.from >= c.ch));
+        if (find.hits.length) showHit(next < 0 ? 0 : next);
+      }
+      paintCount();
+    }
+    function showHit(i) {
+      const h = find.hits[i];
+      if (!h) return;
+      find.cur = i;
+      find.curMark?.clear();
+      find.curMark = cm.markText({ line: h.line, ch: h.from }, { line: h.line, ch: h.to }, { className: 'cm-oy-match-cur' });
+      cm.setSelection({ line: h.line, ch: h.from }, { line: h.line, ch: h.to });
+      cm.scrollIntoView({ line: h.line, ch: h.from }, 80);
+      paintCount();
+    }
+    function findStep(d) {
+      if (!find) { openFind(); return; }
+      if (!find.hits.length) return;
+      showHit((find.cur + d + find.hits.length) % find.hits.length);
+    }
+    function paintCount() {
+      if (!find) return;
+      const n = find.hits.length;
+      $('.fd-count', find.el).textContent = find.input.value ? (n ? `${find.cur + 1} / ${n}${n >= 5000 ? '+' : ''}` : '0 件') : '';
+      find.el.classList.toggle('none', !!find.input.value && !n);
+    }
+    function closeFind() {
+      if (!find) return;
+      clearMarks();
+      find.el.remove();
+      find = null;
+      cm?.focus();
+    }
+
     const load = async () => {
       el.innerHTML = '<div class="loading">読み込み中…</div>';
       try {
@@ -114,8 +254,8 @@
         toast(`保存しました: ${basename(path)}`);
         $$('.conflict', el).forEach((c) => c.remove());
         bus.emit('files-changed', { path, root });
-        const barEl = $('.ev-bar', el);
-        if (barEl) $('.ev-bar span:nth-of-type(2)', el).textContent = sizeStr(r.size);
+        const size = $('.ev-size', el);
+        if (size) size.textContent = sizeStr(r.size);
       } catch (e) {
         if (e.status === 409) {
           const c = div('conflict', `<span>ディスク上のファイルが変更されています。</span><button type="button" class="btn small act" data-act="force-save">上書き保存</button><button type="button" class="btn small act" data-act="reload">読み込み直す</button>`);
@@ -149,6 +289,11 @@
       else if (act === 'diff') openDiff(root, rel);
       else if (act === 'copy-path') copyText(path);
     });
+    // Holding Ctrl marks names as links (Ctrl+click goes to the definition).
+    const ctrlState = (e) => el.classList.toggle('ctrl-down', e.ctrlKey || e.metaKey);
+    el.addEventListener('mousemove', ctrlState);
+    window.addEventListener('keyup', ctrlState);
+    unsubs.push(() => window.removeEventListener('keyup', ctrlState));
     unsubs.push(bus.on('theme', () => cm?.setOption('theme', cmTheme())));
     unsubs.push(bus.on('files-changed', (d) => {
       // Reload when Claude edits the file we are viewing and we have no local changes.
@@ -158,9 +303,14 @@
     return {
       el,
       onShow: () => { setTimeout(() => cm?.refresh(), 0); },
+      onFocus: () => { if (root && rel != null) { OY.sidebar.reveal(rel, root); OY.palette.touchMru(root, rel); } },
       dispose: () => { for (const u of unsubs) u(); },
       focus: () => cm?.focus(),
       isDirty: () => !!cm && cm.getValue() !== lastSaved,
+      reveal,
+      goDef: () => goDef(),
+      lineCount: () => cm?.lineCount() || 0,
+      location: () => (cm ? { path, root, line: cm.getCursor().line + 1, col: cm.getCursor().ch + 1 } : { path, root, line: 1, col: 1 }),
     };
   }
 
@@ -271,7 +421,17 @@
   }
 
   // ------------------------------------------------------------- open helpers
-  function openFile(absPath, root, opts) { if (absPath) return OY.wb.open(fileDesc(absPath, root), opts); }
+  /// Open a file; `opts.line` / `col` / `select` put the cursor there (also on an open tab).
+  function openFile(absPath, root, opts = {}) {
+    if (!absPath) return null;
+    const { line, col, select, ...wbOpts } = opts || {};
+    const d = fileDesc(absPath, root);
+    if (line) Object.assign(d.data, { line, col, select });
+    const existed = OY.wb.has(d.key);
+    const tab = OY.wb.open(d, wbOpts);
+    if (existed && line) tab?.inst?.reveal?.(line, col, select);
+    return tab;
+  }
   function openDiff(root, rel, staged = false, opts) {
     if (!root) return;
     return OY.wb.open({ kind: 'diff', key: `diff:${OY.norm(root)}:${rel || '*'}:${staged ? 1 : 0}`, title: (rel ? basename(rel) : basename(root)) + ' 差分', icon: '±', data: { root, rel, staged } }, opts);

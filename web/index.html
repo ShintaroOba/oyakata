@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OYAKATA</title>
-<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link id="favicon" rel="icon" href="/assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/vendor/codemirror.css">
 <link rel="stylesheet" href="/assets/vendor/cm-dracula.css">
 <link rel="stylesheet" href="/assets/style.css">
@@ -17,17 +17,18 @@
     <header class="sb-head">
       <a class="brand" href="#/" title="OYAKATA"><img class="brand-mark" src="/assets/icon.svg" alt=""><span class="brand-name">OYAKATA</span></a>
       <div class="sb-actions">
-        <button id="btn-new" class="icon-btn" title="新しいセッションを始める">＋</button>
-        <button id="btn-notify" class="icon-btn" title="待機・許可待ちになったらデスクトップ通知">🔔</button>
-        <button id="btn-settings" class="icon-btn" title="設定（テーマ・文字サイズ）">⚙</button>
+        <button id="btn-new" class="icon-btn" title="新しいセッション">＋</button>
+        <button id="btn-notify" class="icon-btn" title="待機・判断待ちになったらデスクトップ通知">🔔</button>
+        <button id="btn-settings" class="icon-btn" title="設定">⚙</button>
       </div>
     </header>
     <div class="sb-switch" id="sb-switch">
       <button class="sw" data-view="sessions" title="セッション一覧">セッション</button>
-      <button class="sw" data-view="explorer" title="プロジェクトツリー">ツリー</button>
-      <button class="sw" data-view="git" title="Git">Git</button>
+      <button class="sw" data-view="explorer" title="プロジェクトツリー（Ctrl+Shift+E）">ツリー</button>
+      <button class="sw" data-view="search" title="全文検索（Ctrl+Shift+F）">検索</button>
+      <button class="sw" data-view="git" title="Git（Ctrl+Shift+G）">Git</button>
       <span class="spacer"></span>
-      <button class="sw mode" id="sb-mode" title="一覧とツリーを同時に表示 / 切替表示">併置</button>
+      <button class="sw mode" id="sb-mode" title="セッション・ツリー・Git を縦に並べて同時に表示（境目はドラッグで高さを変えられます）">並べて表示</button>
     </div>
     <div class="sb-views" id="sb-views">
       <section class="sb-view" id="sb-sessions" data-view="sessions">
@@ -41,12 +42,26 @@
         <h4 class="sb-view-title" hidden><span>ツリー</span><button class="collapse" title="折り畳む">▾</button></h4>
         <div class="sb-view-body">
           <div class="sb-repo-row">
-            <select id="explorer-repo" title="表示するリポジトリ"></select>
-            <button id="explorer-follow" class="icon-btn small on" title="開いているチャットのリポジトリに追従">⇄</button>
+            <select id="explorer-repo" title="表示するリポジトリ（セッションを選ぶと自動で切り替わります）"></select>
+            <button id="tree-compact" class="icon-btn small" title="中身が 1 つだけのフォルダをまとめて表示（main/java/jp/co/…）">⫽</button>
+            <button id="tree-collapse" class="icon-btn small" title="すべて折りたたむ">⊟</button>
             <button id="explorer-refresh" class="icon-btn small" title="再読み込み">↻</button>
+            <button id="explorer-add" class="icon-btn small" title="リポジトリを追加（ローカル / git clone）">＋</button>
           </div>
           <div class="sb-search"><input id="tree-filter" type="search" placeholder="ファイルを絞り込む" autocomplete="off"></div>
           <div id="repo-tree"></div>
+        </div>
+      </section>
+      <section class="sb-view" id="sb-search" data-view="search">
+        <h4 class="sb-view-title" hidden><span>検索</span><button class="collapse" title="折り畳む">▾</button></h4>
+        <div class="sb-view-body">
+          <div class="sv-box">
+            <div class="sv-row"><input id="sv-q" type="search" placeholder="全文検索（Enter）" autocomplete="off" spellcheck="false"><button type="button" class="sv-opt" data-opt="cs" title="大文字と小文字を区別">Aa</button><button type="button" class="sv-opt" data-opt="word" title="単語単位で検索">ab</button><button type="button" class="sv-opt" data-opt="regex" title="正規表現">.*</button></div>
+            <div class="sv-row"><select id="sv-scope" title="検索する範囲"><option value="files">このリポジトリのファイル</option><option value="sessions">すべての会話</option></select></div>
+            <div class="sv-row"><input id="sv-glob" type="text" placeholder="対象のパス（例: *.java, src/, :!*.lock）" autocomplete="off" spellcheck="false"></div>
+          </div>
+          <div id="sv-summary"></div>
+          <div id="sv-results"></div>
         </div>
       </section>
       <section class="sb-view" id="sb-git" data-view="git">
@@ -59,6 +74,7 @@
       <span id="counts"></span>
     </footer>
   </aside>
+  <div id="sb-resizer" title="ドラッグでサイドバーの幅を変更（ダブルクリックで元に戻す）"></div>
 
   <main id="workbench"></main>
 
@@ -71,9 +87,13 @@
     <label class="field"><span>テーマ</span><select id="set-theme"></select></label>
     <div class="field"><span>アクセント</span><div id="set-accent" class="swatches"></div></div>
     <label class="field"><span>文字サイズ</span><select id="set-font"><option value="13">小</option><option value="14">標準</option><option value="15">大</option><option value="16">特大</option></select></label>
+    <label class="field"><span>本文の幅</span><select id="set-width"><option value="narrow">読みやすい幅</option><option value="wide">広い</option><option value="full">ペインいっぱい</option></select></label>
+    <label class="field check"><input type="checkbox" id="set-show-logs"> 作業ログ（ツール呼び出し・思考・システム）を表示する</label>
     <label class="field check"><input type="checkbox" id="set-show-empty"> 空のセッションも一覧に出す</label>
-    <label class="field check"><input type="checkbox" id="set-show-logs"> 作業ログ（ツール呼び出し）を会話に混ぜて表示する</label>
-    <label class="field check"><input type="checkbox" id="set-show-thinking"> 思考ブロックを表示する</label>
+    <label class="field check"><input type="checkbox" id="set-whimsy"> 親方ことば（作業中の掛け声・労いのひとこと）</label>
+    <label class="field check"><input type="checkbox" id="set-stamp"> 承認したら判子を押す</label>
+    <div class="field check"><label><input type="checkbox" id="set-sound"> 終わったら拍子木を鳴らす</label><button class="btn small" id="set-sound-test" type="button">試しに鳴らす</button></div>
+    <div class="field"><span>ショートカット</span><button class="btn" id="set-keys" type="button">一覧を見る</button></div>
     <div class="field"><span>レイアウト</span><button class="btn" id="set-reset-layout">ペイン配置を初期化</button></div>
   </div>
 </div>
@@ -86,8 +106,13 @@
 <script src="/assets/vendor/cm-modes.js"></script>
 <script src="/assets/app.js"></script>
 <script src="/assets/workbench.js"></script>
+<script src="/assets/fx.js"></script>
+<script src="/assets/code.js"></script>
+<script src="/assets/palette.js"></script>
 <script src="/assets/chat.js"></script>
+<script src="/assets/team.js"></script>
 <script src="/assets/editors.js"></script>
+<script src="/assets/search.js"></script>
 <script src="/assets/sidebar.js"></script>
 <script>OY.init();</script>
 </body>

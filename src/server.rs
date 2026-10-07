@@ -36,7 +36,8 @@ pub struct App {
     pub shutdown: Arc<Notify>,
     pub started_at_ms: u64,
     pub runners: Arc<RunnerRegistry>,
-    pub default_permission_mode: Option<String>,
+    /// Metadata-only parsers of subagent transcripts for the team view (体制図).
+    pub agent_cache: Mutex<HashMap<PathBuf, Transcript>>,
 }
 
 pub type Shared = Arc<App>;
@@ -50,8 +51,14 @@ pub fn router(app: Shared) -> Router {
         .route("/api/sessions", get(list_sessions))
         .route("/api/sessions/{id}", get(get_session))
         .route("/api/sessions/{id}/touch", post(touch_session))
+        .route("/api/sessions/{id}/delete", post(delete_session))
+        .route("/api/sessions/{id}/restore", post(restore_session))
+        .route("/api/sessions/{id}/team", get(get_team))
         .route("/api/sessions/{id}/agents/{agent}", get(get_agent))
         .route("/api/repos", get(list_repos))
+        .route("/api/repos/add", post(add_repo))
+        .route("/api/repos/remove", post(remove_repo))
+        .route("/api/repos/clone", post(clone_repo))
         .route("/api/git/status", get(git_status))
         .route("/api/git/tree", get(git_tree))
         .route("/api/git/file", get(git_file))
@@ -60,6 +67,8 @@ pub fn router(app: Shared) -> Router {
         .route("/api/git/log", get(git_log))
         .route("/api/git/show", get(git_show))
         .route("/api/git/branches", get(git_branches))
+        .route("/api/git/grep", get(git_grep))
+        .route("/api/search/sessions", get(search_sessions))
         .route("/api/git/commit", post(git_commit))
         .route("/api/git/push", post(git_push))
         .route("/api/git/pull", post(git_pull))
@@ -72,6 +81,8 @@ pub fn router(app: Shared) -> Router {
         .route("/api/run/{id}/send", post(run_send))
         .route("/api/run/{id}/permission", post(run_permission))
         .route("/api/run/{id}/interrupt", post(run_interrupt))
+        .route("/api/run/{id}/mode", post(run_mode))
+        .route("/api/run/{id}/model", post(run_model))
         .route("/api/run/{id}/stop", post(run_stop))
         .route("/api/terminal/{id}/send", post(terminal_send))
         .route("/api/terminal/{id}/interrupt", post(terminal_interrupt))
@@ -178,6 +189,11 @@ async fn asset(Path(path): Path<String>) -> Response {
         "app.js" => embedded!("app.js", JS, NO_CACHE),
         "workbench.js" => embedded!("workbench.js", JS, NO_CACHE),
         "chat.js" => embedded!("chat.js", JS, NO_CACHE),
+        "team.js" => embedded!("team.js", JS, NO_CACHE),
+        "fx.js" => embedded!("fx.js", JS, NO_CACHE),
+        "code.js" => embedded!("code.js", JS, NO_CACHE),
+        "palette.js" => embedded!("palette.js", JS, NO_CACHE),
+        "search.js" => embedded!("search.js", JS, NO_CACHE),
         "editors.js" => embedded!("editors.js", JS, NO_CACHE),
         "sidebar.js" => embedded!("sidebar.js", JS, NO_CACHE),
         "style.css" => embedded!("style.css", CSS, NO_CACHE),
@@ -281,15 +297,19 @@ async fn config(AxState(app): AxState<Shared>) -> Json<Value> {
             st.repo_roots.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
         )
     };
+    let home = crate::paths::home_dir();
+    let clone_root = ghq_root.clone().unwrap_or_else(|| home.join("repos").display().to_string());
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "claude_dir": claude_dir,
         "claude_exe": app.runners.exe().map(|e| e.display()),
         "can_run": app.runners.exe().is_some(),
         "can_type": cfg!(windows),
-        "default_permission_mode": app.default_permission_mode,
-        "home": crate::paths::home_dir().display().to_string(),
+        "default_permission_mode": crate::runner::DEFAULT_PERMISSION_MODE,
+        "home": home.display().to_string(),
         "ghq_root": ghq_root,
+        "clone_root": clone_root,
+        "path_sep": std::path::MAIN_SEPARATOR.to_string(),
         "repo_roots": repo_roots,
     }))
 }
@@ -355,6 +375,120 @@ async fn touch_session(AxState(app): AxState<Shared>, Path(id): Path<String>) ->
     }
 }
 
+/// Broadcast the session list right away after a change the poll loop would otherwise only
+/// notice on its next tick.
+fn push_sessions(app: &Shared) {
+    let ev = lock(app).take_sessions_event();
+    if let Some(e) = ev {
+        let _ = app.tx.send(e);
+    }
+}
+
+async fn delete_session(AxState(app): AxState<Shared>, Path(id): Path<String>) -> Response {
+    app.runners.forget_exited(&id);
+    let app2 = app.clone();
+    let r = tokio::task::spawn_blocking(move || lock(&app2).delete_session(&id)).await;
+    match r {
+        Ok(Ok(())) => {
+            push_sessions(&app);
+            Json(json!({ "ok": true })).into_response()
+        }
+        Ok(Err(e)) => err(StatusCode::CONFLICT, format!("{e:#}")),
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+async fn restore_session(AxState(app): AxState<Shared>, Path(id): Path<String>) -> Response {
+    let app2 = app.clone();
+    let r = tokio::task::spawn_blocking(move || lock(&app2).restore_session(&id)).await;
+    match r {
+        Ok(Ok(())) => {
+            push_sessions(&app);
+            Json(json!({ "ok": true })).into_response()
+        }
+        Ok(Err(e)) => err(StatusCode::CONFLICT, format!("{e:#}")),
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+async fn get_team(AxState(app): AxState<Shared>, Path(id): Path<String>) -> Response {
+    let app2 = app.clone();
+    let result = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
+        ensure_loaded(&app2, &id)?;
+        let inputs = lock(&app2).team_inputs(&id)?;
+        // Reading subagent transcripts can take a moment; keep the index unlocked meanwhile.
+        let mut cache = app2.agent_cache.lock().unwrap_or_else(|e| e.into_inner());
+        let agents = crate::index::build_team(&inputs, &mut cache);
+        Ok(serde_json::to_vec(&json!({ "agents": agents }))?)
+    })
+    .await;
+    json_bytes(result)
+}
+
+async fn add_repo(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Response {
+    let Some(path) = body_str(&body, "path").map(PathBuf::from) else { return bad("path is required") };
+    if !path.is_absolute() {
+        return bad("フォルダは絶対パスで指定してください");
+    }
+    let r = lock(&app).add_repo(path.clone());
+    match r {
+        Ok(()) => {
+            let repos = lock(&app).repos();
+            push_sessions(&app);
+            Json(json!({ "ok": true, "root": path.display().to_string(), "repos": repos })).into_response()
+        }
+        Err(e) => bad(format!("{e:#}")),
+    }
+}
+
+async fn remove_repo(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Response {
+    let Some(path) = body_str(&body, "path").map(str::to_string) else { return bad("path is required") };
+    let r = lock(&app).remove_repo(&path);
+    match r {
+        Ok(removed) => {
+            let repos = lock(&app).repos();
+            push_sessions(&app);
+            Json(json!({ "ok": true, "removed": removed, "repos": repos })).into_response()
+        }
+        Err(e) => bad(format!("{e:#}")),
+    }
+}
+
+async fn clone_repo(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Response {
+    let Some(url) = body_str(&body, "url").map(str::to_string) else { return bad("url is required") };
+    let dest = match body_str(&body, "dest") {
+        Some(d) => PathBuf::from(d),
+        None => {
+            let (root, ghq) = {
+                let st = lock(&app);
+                match &st.ghq_root {
+                    Some(g) => (g.clone(), true),
+                    None => (crate::paths::home_dir().join("repos"), false),
+                }
+            };
+            match gitops::clone_dest(&root, &url, ghq) {
+                Some(d) => d,
+                None => return bad("URL からリポジトリ名を読み取れませんでした。clone 先を指定してください。"),
+            }
+        }
+    };
+    if !dest.is_absolute() {
+        return bad("clone 先は絶対パスで指定してください");
+    }
+    let dest2 = dest.clone();
+    let out = match tokio::task::spawn_blocking(move || gitops::clone(&url, &dest2)).await {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => return bad(format!("{e:#}")),
+        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    };
+    if let Err(e) = lock(&app).add_repo(dest.clone()) {
+        return bad(format!("{e:#}"));
+    }
+    let repos = lock(&app).repos();
+    push_sessions(&app);
+    Json(json!({ "ok": true, "root": dest.display().to_string(), "output": out, "repos": repos })).into_response()
+}
+
 #[derive(Serialize)]
 struct AgentResponse<'a> {
     agent: crate::index::AgentMeta,
@@ -386,7 +520,8 @@ async fn git_status(Query(q): Query<HashMap<String, String>>) -> Response {
 
 async fn git_tree(Query(q): Query<HashMap<String, String>>) -> Response {
     let root = match repo_root(&q) { Ok(r) => r, Err(e) => return e };
-    blocking_json(move || gitops::tree(&root).map(|files| json!({ "files": files }))).await
+    let tracked_only = q.get("tracked").map(|v| v == "1").unwrap_or(false);
+    blocking_json(move || gitops::tree(&root, tracked_only).map(|files| json!({ "files": files }))).await
 }
 
 async fn git_file(Query(q): Query<HashMap<String, String>>) -> Response {
@@ -435,6 +570,30 @@ async fn git_show(Query(q): Query<HashMap<String, String>>) -> Response {
 async fn git_branches(Query(q): Query<HashMap<String, String>>) -> Response {
     let root = match repo_root(&q) { Ok(r) => r, Err(e) => return e };
     blocking_json(move || gitops::branches(&root).map(|b| json!({ "branches": b }))).await
+}
+
+async fn git_grep(Query(q): Query<HashMap<String, String>>) -> Response {
+    let root = match repo_root(&q) { Ok(r) => r, Err(e) => return e };
+    let flag = |k: &str| q.get(k).map(|v| v == "1" || v == "true").unwrap_or(false);
+    let Some(pattern) = q.get("q").filter(|s| !s.is_empty()).cloned() else { return bad("q is required") };
+    let opts = gitops::GrepOptions {
+        pattern,
+        regex: flag("regex"),
+        pcre: flag("pcre"),
+        case_sensitive: flag("case"),
+        word: flag("word"),
+        pathspecs: q.get("glob").map(|g| g.split(',').map(str::to_string).collect()).unwrap_or_default(),
+        max: q.get("max").and_then(|s| s.parse().ok()).unwrap_or(2000).clamp(1, 10_000),
+    };
+    blocking_json(move || gitops::grep(&root, &opts).map(|(matches, truncated)| json!({ "matches": matches, "truncated": truncated }))).await
+}
+
+async fn search_sessions(AxState(app): AxState<Shared>, Query(q): Query<HashMap<String, String>>) -> Response {
+    let Some(query) = q.get("q").map(|s| s.trim().to_string()).filter(|s| s.chars().count() >= 2) else {
+        return bad("2 文字以上で検索してください");
+    };
+    let files = lock(&app).transcript_files();
+    blocking_json(move || Ok(json!({ "hits": crate::index::search_transcripts(&files, &query, 300, 5) }))).await
 }
 
 async fn git_commit(Json(body): Json<Value>) -> Response {
@@ -537,6 +696,12 @@ async fn run_start(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Re
     let Some(cwd) = body_str(&body, "cwd") else { return bad("cwd is required") };
     let Some(prompt) = body_str(&body, "prompt") else { return bad("prompt is required") };
     let resume = body_str(&body, "resume").map(str::to_string);
+    let session_id = body_str(&body, "session_id").map(str::to_string);
+    if let Some(id) = &session_id {
+        if lock(&app).sessions.contains_key(id) && resume.is_none() {
+            return err(StatusCode::CONFLICT, "そのセッション ID は既に使われています。");
+        }
+    }
     if let Some(id) = &resume {
         app.runners.forget_exited(id);
         let st = lock(&app);
@@ -548,6 +713,7 @@ async fn run_start(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Re
         cwd: PathBuf::from(cwd),
         prompt: prompt.to_string(),
         resume,
+        session_id,
         model: body_str(&body, "model").map(str::to_string),
         permission_mode: body_str(&body, "permission_mode").map(str::to_string),
         effort: body_str(&body, "effort").map(str::to_string),
@@ -600,6 +766,22 @@ async fn run_permission(AxState(app): AxState<Shared>, Path(id): Path<String>, J
 
 async fn run_interrupt(AxState(app): AxState<Shared>, Path(id): Path<String>) -> Response {
     match app.runners.interrupt(&id).await {
+        Ok(()) => Json(json!({ "ok": true })).into_response(),
+        Err(e) => err(StatusCode::CONFLICT, format!("{e:#}")),
+    }
+}
+
+async fn run_mode(AxState(app): AxState<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
+    let Some(mode) = body_str(&body, "mode") else { return bad("mode is required") };
+    match app.runners.set_permission_mode(&id, mode).await {
+        Ok(()) => Json(json!({ "ok": true })).into_response(),
+        Err(e) => err(StatusCode::CONFLICT, format!("{e:#}")),
+    }
+}
+
+async fn run_model(AxState(app): AxState<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
+    let model = body_str(&body, "model");
+    match app.runners.set_model(&id, model).await {
         Ok(()) => Json(json!({ "ok": true })).into_response(),
         Err(e) => err(StatusCode::CONFLICT, format!("{e:#}")),
     }

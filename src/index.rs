@@ -22,8 +22,36 @@ pub struct AgentMeta {
     pub agent_type: Option<String>,
     pub description: Option<String>,
     pub tool_use_id: Option<String>,
+    /// Started with `run_in_background`, so the spawning tool call returns right away.
+    pub background: bool,
     #[serde(skip)]
     pub path: PathBuf,
+}
+
+/// One subagent as the team view (体制図) shows it.
+#[derive(Debug, Clone, Serialize)]
+pub struct TeamAgent {
+    pub agent_id: String,
+    pub agent_type: Option<String>,
+    pub description: Option<String>,
+    pub tool_use_id: Option<String>,
+    /// `main`, or the agent id of the subagent that spawned this one.
+    pub parent: String,
+    /// Index of the spawning tool call in the main transcript, when it is there.
+    pub index: Option<usize>,
+    pub prompt: Option<String>,
+    /// `running` | `done` | `error` | `stopped`
+    pub status: String,
+    pub background: bool,
+    pub model: Option<String>,
+    pub started_at: Option<String>,
+    pub last_at: Option<String>,
+    pub tool_calls: u32,
+    pub last_tool: Option<String>,
+    pub last_tool_at: Option<String>,
+    pub last_text: Option<String>,
+    pub result: Option<String>,
+    pub context_tokens: u64,
 }
 
 pub struct SessionEntry {
@@ -82,6 +110,14 @@ pub struct SessionSummary {
     pub edited_files: Vec<EditedFile>,
     pub artifacts: Vec<String>,
     pub loaded: bool,
+    /// Tokens in the context window after the latest response.
+    pub context_tokens: u64,
+    /// Context window size when Claude Code reported it (OYAKATA-run sessions).
+    pub context_window: Option<u64>,
+    pub permission_mode: Option<String>,
+    pub effort: Option<String>,
+    pub last_tool: Option<String>,
+    pub last_tool_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -92,6 +128,9 @@ pub struct RepoEntry {
     pub sessions: usize,
     pub last_at: Option<String>,
     pub source: String,
+    /// Added by the user (import or clone), so it stays listed without sessions.
+    pub added: bool,
+    pub is_git: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -111,6 +150,10 @@ pub struct RunState {
     pub status: String,
     pub waiting_for: Option<String>,
     pub cwd: String,
+    pub model: Option<String>,
+    pub permission_mode: Option<String>,
+    pub effort: Option<String>,
+    pub context_window: Option<u64>,
 }
 
 pub struct State {
@@ -124,6 +167,8 @@ pub struct State {
     scanned: Vec<RepoInfo>,
     scanned_at: Option<Instant>,
     last_signature: u64,
+    /// Folders the user added from the browser (import / clone), persisted in `oyakata.json`.
+    pub added_repos: Vec<PathBuf>,
 }
 
 impl State {
@@ -139,6 +184,7 @@ impl State {
             scanned: Vec::new(),
             scanned_at: None,
             last_signature: 0,
+            added_repos: Vec::new(),
         }
     }
 
@@ -301,7 +347,18 @@ impl State {
                         })
                         .unwrap_or_else(|| "permission".into())
                 });
-                self.runs.insert(id.to_string(), RunState { status: v.status.clone(), waiting_for, cwd: v.cwd.clone() });
+                self.runs.insert(
+                    id.to_string(),
+                    RunState {
+                        status: v.status.clone(),
+                        waiting_for,
+                        cwd: v.cwd.clone(),
+                        model: v.model.clone(),
+                        permission_mode: v.permission_mode.clone(),
+                        effort: v.effort.clone(),
+                        context_window: v.context_window,
+                    },
+                );
             }
             _ => {
                 self.runs.remove(id);
@@ -394,6 +451,7 @@ impl State {
                 agent_type: field("agentType"),
                 description: field("description"),
                 tool_use_id: field("toolUseId"),
+                background: field("requestShape").as_deref() == Some("background"),
                 path: p,
             });
         }
@@ -493,6 +551,12 @@ impl State {
             edited_files,
             artifacts: m.artifacts.clone(),
             loaded: e.transcript.keeps_items(),
+            context_tokens: m.context_tokens,
+            context_window: run.and_then(|r| r.context_window),
+            permission_mode: run.and_then(|r| r.permission_mode.clone()).or_else(|| m.permission_mode.clone()),
+            effort: run.and_then(|r| r.effort.clone()).or_else(|| m.effort.clone()),
+            last_tool: m.last_tool.clone(),
+            last_tool_at: m.last_tool_at.clone(),
         }
     }
 
@@ -537,6 +601,12 @@ impl State {
                 edited_files: Vec::new(),
                 artifacts: Vec::new(),
                 loaded: false,
+                context_tokens: 0,
+                context_window: run.context_window,
+                permission_mode: run.permission_mode.clone(),
+                effort: run.effort.clone(),
+                last_tool: None,
+                last_tool_at: None,
             });
         }
         v.sort_by(|a, b| b.last_at.cmp(&a.last_at).then_with(|| b.mtime_ms.cmp(&a.mtime_ms)));
@@ -558,6 +628,8 @@ impl State {
                 sessions: 0,
                 last_at: None,
                 source: "sessions".into(),
+                added: false,
+                is_git: true,
             });
             if e.transcript.meta.user_turns > 0 || self.live.contains_key(&e.id) || self.runs.contains_key(&e.id) {
                 ent.sessions += 1;
@@ -575,8 +647,31 @@ impl State {
                     sessions: 0,
                     last_at: None,
                     source: "scan".into(),
+                    added: false,
+                    is_git: true,
                 });
             }
+        }
+        for p in &self.added_repos {
+            let r = repo::detect(&p.to_string_lossy());
+            let is_git = r.root.is_some() && r.subdir.is_none();
+            // A folder inside a repository is listed as itself, not as the repository.
+            let (key, name, root) = if is_git {
+                (r.key.clone(), r.name.clone(), r.root.clone().unwrap_or_default())
+            } else {
+                (repo::normalize(p), p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.display().to_string()), p.display().to_string())
+            };
+            let ent = map.entry(key.clone()).or_insert_with(|| RepoEntry {
+                key,
+                name,
+                root,
+                sessions: 0,
+                last_at: None,
+                source: "added".into(),
+                added: true,
+                is_git,
+            });
+            ent.added = true;
         }
         let mut v: Vec<RepoEntry> = map.into_values().collect();
         v.sort_by(|a, b| b.last_at.cmp(&a.last_at).then_with(|| a.name.cmp(&b.name)));
@@ -634,8 +729,165 @@ impl State {
             let r = &self.runs[id];
             r.status.hash(&mut h);
             r.waiting_for.hash(&mut h);
+            r.model.hash(&mut h);
+            r.permission_mode.hash(&mut h);
+            r.context_window.hash(&mut h);
         }
+        self.added_repos.hash(&mut h);
         h.finish()
+    }
+
+    // ---- added repositories ---------------------------------------------------------------
+
+    fn config_path(&self) -> PathBuf {
+        self.claude_dir.join("oyakata.json")
+    }
+
+    /// Read `oyakata.json` (folders the user added from the browser).
+    pub fn load_config(&mut self) {
+        let Ok(text) = fs::read_to_string(self.config_path()) else { return };
+        let Ok(v) = serde_json::from_str::<Value>(&text) else { return };
+        self.added_repos = v
+            .get("repos")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(PathBuf::from)
+            .collect();
+    }
+
+    fn save_config(&self) -> Result<()> {
+        let mut v: Value = fs::read_to_string(self.config_path())
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .filter(Value::is_object)
+            .unwrap_or_else(|| serde_json::json!({}));
+        v["repos"] = Value::Array(self.added_repos.iter().map(|p| Value::String(p.display().to_string())).collect());
+        fs::write(self.config_path(), serde_json::to_vec_pretty(&v)?)?;
+        Ok(())
+    }
+
+    /// List a folder in the sidebar even when no session has run there yet.
+    pub fn add_repo(&mut self, path: PathBuf) -> Result<()> {
+        if !path.is_dir() {
+            return Err(anyhow!("{} はフォルダではありません", path.display()));
+        }
+        let key = repo::normalize(&path);
+        if !self.added_repos.iter().any(|p| repo::normalize(p) == key) {
+            self.added_repos.push(path);
+            self.save_config()?;
+        }
+        Ok(())
+    }
+
+    pub fn remove_repo(&mut self, path: &str) -> Result<bool> {
+        let key = repo::normalize(Path::new(path));
+        let before = self.added_repos.len();
+        self.added_repos.retain(|p| repo::normalize(p) != key);
+        if self.added_repos.len() == before {
+            return Ok(false);
+        }
+        self.save_config()?;
+        Ok(true)
+    }
+
+    // ---- deleting sessions ----------------------------------------------------------------
+
+    fn trash_dir(&self) -> PathBuf {
+        self.claude_dir.join("oyakata-trash")
+    }
+
+    /// Move a session's transcript (and its side folder of subagents / tool results) into
+    /// `oyakata-trash/<ms>-<id>/` so a mistaken delete can be undone.
+    pub fn delete_session(&mut self, id: &str) -> Result<()> {
+        if self.live.contains_key(id) || self.runs.contains_key(id) {
+            return Err(anyhow!("稼働中のセッションは削除できません。終了してから削除してください。"));
+        }
+        let e = self.sessions.get(id).ok_or_else(|| anyhow!("unknown session: {id}"))?;
+        let path = e.path.clone();
+        let origin = path.parent().map(Path::to_path_buf).ok_or_else(|| anyhow!("bad session path"))?;
+        let dest = self.trash_dir().join(format!("{}-{id}", now_ms()));
+        fs::create_dir_all(&dest)?;
+        fs::write(dest.join("origin.txt"), origin.to_string_lossy().as_bytes())?;
+        let file_name = path.file_name().ok_or_else(|| anyhow!("bad session path"))?;
+        fs::rename(&path, dest.join(file_name)).map_err(|err| {
+            let _ = fs::remove_dir_all(&dest);
+            anyhow!("{} を移動できませんでした: {err}", path.display())
+        })?;
+        let side = path.with_extension("");
+        if side.is_dir() {
+            let _ = fs::rename(&side, dest.join(id));
+        }
+        self.sessions.remove(id);
+        Ok(())
+    }
+
+    /// Undo `delete_session`.
+    pub fn restore_session(&mut self, id: &str) -> Result<()> {
+        let suffix = format!("-{id}");
+        let found = fs::read_dir(self.trash_dir())?
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.file_name().map(|n| n.to_string_lossy().ends_with(&suffix)).unwrap_or(false))
+            .max()
+            .ok_or_else(|| anyhow!("ゴミ箱にセッション {id} が見つかりません"))?;
+        let origin = PathBuf::from(fs::read_to_string(found.join("origin.txt"))?.trim());
+        fs::create_dir_all(&origin)?;
+        let file = format!("{id}.jsonl");
+        if origin.join(&file).exists() {
+            return Err(anyhow!("元の場所に同じセッションが既にあります"));
+        }
+        fs::rename(found.join(&file), origin.join(&file))?;
+        if found.join(id).is_dir() {
+            let _ = fs::rename(found.join(id), origin.join(id));
+        }
+        let _ = fs::remove_dir_all(&found);
+        self.discover();
+        self.refresh_one(id);
+        Ok(())
+    }
+
+    /// Empty trash entries older than `max_age`.
+    pub fn purge_trash(&self, max_age: Duration) {
+        let Ok(rd) = fs::read_dir(self.trash_dir()) else { return };
+        let cutoff = now_ms().saturating_sub(max_age.as_millis() as u64);
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let ms: u64 = name.split('-').next().and_then(|s| s.parse().ok()).unwrap_or(u64::MAX);
+            if ms < cutoff {
+                let _ = fs::remove_dir_all(e.path());
+            }
+        }
+    }
+
+    // ---- team view --------------------------------------------------------------------------
+
+    /// What the team view needs from the index, copied out so the subagent transcripts can
+    /// be read without holding the state lock (see `build_team`).
+    pub fn team_inputs(&mut self, id: &str) -> Result<TeamInputs> {
+        self.scan_agents(id, false);
+        let active = self.live.contains_key(id) || self.runs.contains_key(id);
+        let entry = self.sessions.get(id).ok_or_else(|| anyhow!("unknown session: {id}"))?;
+        let mut calls: HashMap<String, TeamCall> = HashMap::new();
+        for (index, it) in entry.transcript.items.iter().enumerate() {
+            if let Item::Tool { id: tu, name, input, result, ts, .. } = it {
+                if name == "Agent" || name == "Task" {
+                    calls.insert(
+                        tu.clone(),
+                        TeamCall { index, ts: ts.clone(), input: input.clone(), result: result.as_ref().map(|r| (r.is_error, r.text.clone())) },
+                    );
+                }
+            }
+        }
+        Ok(TeamInputs { active, agents: entry.agents.clone(), calls })
+    }
+
+    /// (id, transcript path) of every session, most recently active first.
+    pub fn transcript_files(&self) -> Vec<(String, PathBuf)> {
+        let mut v: Vec<(&SessionEntry, Option<&String>)> = self.sessions.values().map(|e| (e, e.transcript.meta.last_at.as_ref())).collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.0.mtime_ms.cmp(&a.0.mtime_ms)));
+        v.into_iter().map(|(e, _)| (e.id.clone(), e.path.clone())).collect()
     }
 
     /// A `Sessions` event when anything the sidebar shows has changed since the last call.
@@ -649,6 +901,192 @@ impl State {
     }
 }
 
+pub struct TeamCall {
+    index: usize,
+    ts: Option<String>,
+    input: Value,
+    result: Option<(bool, String)>,
+}
+
+pub struct TeamInputs {
+    active: bool,
+    agents: Vec<AgentMeta>,
+    calls: HashMap<String, TeamCall>,
+}
+
+/// The subagents of a session with their role, status and what they are doing now.
+/// `cache` holds metadata-only parsers per subagent file, fed incrementally.
+pub fn build_team(inputs: &TeamInputs, cache: &mut HashMap<PathBuf, Transcript>) -> Vec<TeamAgent> {
+    let TeamInputs { active, agents, calls } = inputs;
+    for a in agents {
+        let size = fs::metadata(&a.path).map(|m| m.len()).unwrap_or(0);
+        let t = cache.entry(a.path.clone()).or_insert_with(Transcript::for_agent_meta);
+        if size < t.consumed {
+            *t = Transcript::for_agent_meta();
+        }
+        if size > t.consumed {
+            if let Ok(bytes) = read_from(&a.path, t.consumed) {
+                t.feed(&bytes);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for a in agents {
+        let meta = cache.get(&a.path).map(|t| t.meta.clone()).unwrap_or_default();
+        let call = a.tool_use_id.as_ref().and_then(|tu| calls.get(tu));
+        let parent = match (&a.tool_use_id, call) {
+            (Some(_), Some(_)) | (None, _) => "main".to_string(),
+            (Some(tu), None) => agents
+                .iter()
+                .find(|o| o.agent_id != a.agent_id && cache.get(&o.path).map(|t| t.meta.agent_calls.contains(tu)).unwrap_or(false))
+                .map(|o| o.agent_id.clone())
+                .unwrap_or_else(|| "main".to_string()),
+        };
+        let input_str = |k: &str| call.and_then(|c| c.input.get(k)).and_then(Value::as_str).map(str::to_string);
+        let background = a.background || call.and_then(|c| c.input.get("run_in_background")).and_then(Value::as_bool).unwrap_or(false);
+        let result = call.and_then(|c| c.result.clone());
+        let status = if result.as_ref().map(|(err, _)| *err).unwrap_or(false) {
+            "error"
+        } else if meta.finished || meta.last_stop_reason.as_deref() == Some("end_turn") || (result.is_some() && !background) {
+            "done"
+        } else if *active {
+            "running"
+        } else if meta.last_stop_reason.as_deref() == Some("tool_use") {
+            // The session ended while this agent was between tool calls.
+            "stopped"
+        } else {
+            "done"
+        };
+        out.push(TeamAgent {
+            agent_id: a.agent_id.clone(),
+            agent_type: a.agent_type.clone().or_else(|| input_str("subagent_type")),
+            description: a.description.clone().or_else(|| input_str("description")),
+            tool_use_id: a.tool_use_id.clone(),
+            parent,
+            index: call.map(|c| c.index),
+            prompt: input_str("prompt").or(meta.first_prompt.clone()).map(|p| crate::transcript::snippet(&p, 600)),
+            status: status.to_string(),
+            background,
+            model: meta.model.clone().or_else(|| input_str("model")),
+            started_at: meta.started_at.clone().or_else(|| call.and_then(|c| c.ts.clone())),
+            last_at: meta.last_at.clone(),
+            tool_calls: meta.tool_calls,
+            last_tool: meta.last_tool.clone(),
+            last_tool_at: meta.last_tool_at.clone(),
+            last_text: meta.last_text_snippet.clone(),
+            // A background agent's tool result is only the launch notice; its report is its
+            // own last message.
+            result: result
+                .filter(|(err, t)| !t.trim().is_empty() && (!background || *err))
+                .map(|(_, t)| crate::transcript::snippet(&t, 400)),
+            context_tokens: meta.context_tokens,
+        });
+    }
+    out.sort_by(|a, b| a.index.unwrap_or(usize::MAX).cmp(&b.index.unwrap_or(usize::MAX)).then_with(|| a.started_at.cmp(&b.started_at)));
+    out
+}
+
+/// One hit of the conversation search.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionHit {
+    pub session: String,
+    pub ts: Option<String>,
+    /// `user` or `assistant`
+    pub role: String,
+    pub snippet: String,
+}
+
+/// Search what people and Claude wrote (not tool output) across transcripts, newest session
+/// first. `files` are (session id, path). Case-insensitive for ASCII.
+pub fn search_transcripts(files: &[(String, PathBuf)], query: &str, max: usize, per_session: usize) -> Vec<SessionHit> {
+    let q = query.trim().to_ascii_lowercase();
+    if q.is_empty() || files.is_empty() {
+        return Vec::new();
+    }
+    // Files are independent: scan them on all cores, then keep the newest-first order.
+    let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(files.len()).max(1);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut per_file: Vec<Vec<SessionHit>> = vec![Vec::new(); files.len()];
+    let results = std::sync::Mutex::new(&mut per_file);
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| loop {
+                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some((id, path)) = files.get(i) else { break };
+                let hits = search_file(id, path, &q, per_session);
+                if !hits.is_empty() {
+                    results.lock().unwrap_or_else(|e| e.into_inner())[i] = hits;
+                }
+            });
+        }
+    });
+    per_file.into_iter().flatten().take(max).collect()
+}
+
+/// ASCII case-insensitive substring test without allocating (`needle` is lowercase).
+fn contains_ci(hay: &[u8], needle: &[u8]) -> bool {
+    let Some((&first, rest)) = needle.split_first() else { return true };
+    if hay.len() < needle.len() {
+        return false;
+    }
+    let last = hay.len() - needle.len();
+    let mut i = 0;
+    while i <= last {
+        if hay[i].to_ascii_lowercase() == first && hay[i + 1..i + needle.len()].iter().zip(rest).all(|(a, b)| a.to_ascii_lowercase() == *b) {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+fn search_file(id: &str, path: &Path, q: &str, per_session: usize) -> Vec<SessionHit> {
+    let mut hits = Vec::new();
+    let Ok(bytes) = fs::read(path) else { return hits };
+    let qb = q.as_bytes();
+    for raw in bytes.split(|&b| b == b'\n') {
+        // One pass over the line for the query; JSON is parsed only for the rare hit.
+        if !contains_ci(raw, qb) {
+            continue;
+        }
+        let Ok(line) = std::str::from_utf8(raw) else { continue };
+        if !(line.contains("\"type\":\"user\"") || line.contains("\"type\":\"assistant\"")) {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
+        if v.get("isSidechain").and_then(Value::as_bool).unwrap_or(false) || v.get("isMeta").and_then(Value::as_bool).unwrap_or(false) {
+            continue;
+        }
+        let role = v.get("type").and_then(Value::as_str).unwrap_or("").to_string();
+        let text = match v.get("message").and_then(|m| m.get("content")) {
+            Some(Value::String(s)) => s.clone(),
+            Some(Value::Array(blocks)) => blocks
+                .iter()
+                .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+                .filter_map(|b| b.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            _ => continue,
+        };
+        // The hit may have been in tool output or metadata rather than in what was said.
+        let lower = text.to_ascii_lowercase();
+        let Some(pos) = lower.find(q) else { continue };
+        // ASCII lowercasing keeps byte offsets, so `pos` is valid in `text` too.
+        let start = text[..pos].char_indices().rev().nth(50).map(|(i, _)| i).unwrap_or(0);
+        let snippet: String = text[start..].chars().take(180).collect::<String>().replace(['\n', '\r'], " ");
+        hits.push(SessionHit {
+            session: id.to_string(),
+            ts: v.get("timestamp").and_then(Value::as_str).map(str::to_string),
+            role,
+            snippet: if start > 0 { format!("…{snippet}") } else { snippet },
+        });
+        if hits.len() >= per_session {
+            break;
+        }
+    }
+    hits
+}
+
 fn repo_for(cache: &mut HashMap<String, RepoInfo>, cwd: &str) -> RepoInfo {
     if let Some(r) = cache.get(cwd) {
         return r.clone();
@@ -656,6 +1094,10 @@ fn repo_for(cache: &mut HashMap<String, RepoInfo>, cwd: &str) -> RepoInfo {
     let r = repo::detect(cwd);
     cache.insert(cwd.to_string(), r.clone());
     r
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
 fn mtime_millis(md: &fs::Metadata) -> u64 {
@@ -674,4 +1116,34 @@ fn read_from(path: &Path, offset: u64) -> std::io::Result<Vec<u8>> {
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
     Ok(buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn case_insensitive_search_without_allocating() {
+        assert!(contains_ci(b"Hello MonoRepo world", b"monorepo"));
+        assert!(!contains_ci(b"mono repo", b"monorepo"));
+        assert!(contains_ci("日本語のテスト".as_bytes(), "テスト".as_bytes()));
+        assert!(!contains_ci(b"ab", b"abc"));
+    }
+
+    #[test]
+    fn searches_what_was_said_not_tool_output() {
+        let dir = std::env::temp_dir().join(format!("oyakata-search-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("s.jsonl");
+        let lines = [
+            r#"{"type":"user","timestamp":"t1","message":{"role":"user","content":"Please split into a MonoRepo"}}"#,
+            r#"{"type":"user","timestamp":"t2","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"x","content":"monorepo in a tool result"}]}}"#,
+            r#"{"type":"assistant","timestamp":"t3","message":{"role":"assistant","content":[{"type":"text","text":"Done: the monorepo has apps/web."}]}}"#,
+        ];
+        fs::write(&f, lines.join("\n")).unwrap();
+        let hits = search_transcripts(&[("s".into(), f)], "monorepo", 10, 5);
+        let _ = fs::remove_dir_all(&dir);
+        assert_eq!(hits.iter().map(|h| h.ts.as_deref().unwrap_or("")).collect::<Vec<_>>(), vec!["t1", "t3"]);
+        assert_eq!(hits[1].role, "assistant");
+    }
 }

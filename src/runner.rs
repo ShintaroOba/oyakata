@@ -44,6 +44,8 @@ pub struct RunView {
     pub resumed: bool,
     pub turns: u32,
     pub total_cost_usd: f64,
+    /// Context window of the model, as reported by Claude Code at the end of a turn.
+    pub context_window: Option<u64>,
     pub exit_code: Option<i32>,
     pub last_error: Option<String>,
     pub stderr_tail: Vec<String>,
@@ -70,10 +72,16 @@ impl ClaudeExe {
     }
 }
 
+/// Permission mode for sessions OYAKATA starts when the caller does not pick one.
+pub const DEFAULT_PERMISSION_MODE: &str = "auto";
+
 pub struct StartOptions {
     pub cwd: PathBuf,
     pub prompt: String,
     pub resume: Option<String>,
+    /// Id for a new session, chosen by the browser so it can show the chat before Claude
+    /// writes anything. Ignored when resuming.
+    pub session_id: Option<String>,
     pub model: Option<String>,
     pub permission_mode: Option<String>,
     pub effort: Option<String>,
@@ -122,7 +130,15 @@ impl RunnerRegistry {
         if !opts.cwd.is_dir() {
             bail!("working directory does not exist: {}", opts.cwd.display());
         }
-        let session_id = opts.resume.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let session_id = match (&opts.resume, &opts.session_id) {
+            (Some(id), _) => id.clone(),
+            (None, Some(id)) => {
+                uuid::Uuid::parse_str(id).map_err(|_| anyhow!("session id must be a UUID"))?;
+                id.to_lowercase()
+            }
+            (None, None) => uuid::Uuid::new_v4().to_string(),
+        };
+        let permission_mode = opts.permission_mode.clone().unwrap_or_else(|| DEFAULT_PERMISSION_MODE.to_string());
         if self.view(&session_id).map(|v| v.status != "exited").unwrap_or(false) {
             bail!("session {session_id} is already running under OYAKATA");
         }
@@ -153,9 +169,7 @@ impl RunnerRegistry {
         if let Some(m) = &opts.model {
             cmd.args(["--model", m]);
         }
-        if let Some(m) = &opts.permission_mode {
-            cmd.args(["--permission-mode", m]);
-        }
+        cmd.args(["--permission-mode", &permission_mode]);
         if let Some(e) = &opts.effort {
             cmd.args(["--effort", e]);
         }
@@ -190,11 +204,12 @@ impl RunnerRegistry {
             pending: Vec::new(),
             started_at: now_ms(),
             model: opts.model.clone(),
-            permission_mode: opts.permission_mode.clone(),
+            permission_mode: Some(permission_mode.clone()),
             effort: opts.effort.clone(),
             resumed: opts.resume.is_some(),
             turns: 0,
             total_cost_usd: 0.0,
+            context_window: None,
             exit_code: None,
             last_error: None,
             stderr_tail: Vec::new(),
@@ -265,7 +280,11 @@ impl RunnerRegistry {
             }
         }
         r.write(&user_message(text)).await?;
-        r.view.lock().unwrap_or_else(|e| e.into_inner()).status = "busy".into();
+        {
+            let mut v = r.view.lock().unwrap_or_else(|e| e.into_inner());
+            v.status = "busy".into();
+            v.last_error = None;
+        }
         self.notify(id);
         Ok(())
     }
@@ -302,6 +321,42 @@ impl RunnerRegistry {
             "request": { "subtype": "interrupt" }
         }))
         .await?;
+        Ok(())
+    }
+
+    /// Switch the permission mode of a running session (what Shift+Tab does in a terminal).
+    pub async fn set_permission_mode(&self, id: &str, mode: &str) -> Result<()> {
+        const MODES: &[&str] = &["default", "acceptEdits", "auto", "plan", "bypassPermissions", "dontAsk"];
+        if !MODES.contains(&mode) {
+            bail!("unknown permission mode: {mode}");
+        }
+        let r = self.get(id)?;
+        r.write(&json!({
+            "type": "control_request",
+            "request_id": uuid::Uuid::new_v4().to_string(),
+            "request": { "subtype": "set_permission_mode", "mode": mode }
+        }))
+        .await?;
+        r.view.lock().unwrap_or_else(|e| e.into_inner()).permission_mode = Some(mode.to_string());
+        self.notify(id);
+        Ok(())
+    }
+
+    /// Switch the model of a running session (`/model`). `None` returns to the default.
+    pub async fn set_model(&self, id: &str, model: Option<&str>) -> Result<()> {
+        if let Some(m) = model {
+            if m.is_empty() || m.starts_with('-') || m.chars().any(char::is_whitespace) {
+                bail!("invalid model name");
+            }
+        }
+        let r = self.get(id)?;
+        let mut request = json!({ "subtype": "set_model" });
+        if let Some(m) = model {
+            request["model"] = Value::String(m.to_string());
+        }
+        r.write(&json!({ "type": "control_request", "request_id": uuid::Uuid::new_v4().to_string(), "request": request })).await?;
+        r.view.lock().unwrap_or_else(|e| e.into_inner()).model = model.map(str::to_string);
+        self.notify(id);
         Ok(())
     }
 
@@ -390,6 +445,14 @@ fn handle_event(view: &Arc<Mutex<RunView>>, v: &Value) -> bool {
             if let Some(c) = v.get("total_cost_usd").and_then(Value::as_f64) {
                 view.total_cost_usd = c;
             }
+            // {"modelUsage": {"<model>": {"contextWindow": 1000000, ...}}}
+            let window = v
+                .get("modelUsage")
+                .and_then(Value::as_object)
+                .and_then(|m| m.values().filter_map(|u| u.get("contextWindow").and_then(Value::as_u64)).max());
+            if window.is_some() {
+                view.context_window = window;
+            }
             let subtype = v.get("subtype").and_then(Value::as_str).unwrap_or("");
             if subtype.starts_with("error") {
                 view.last_error = Some(
@@ -413,6 +476,18 @@ fn handle_event(view: &Arc<Mutex<RunView>>, v: &Value) -> bool {
                 if let Some(m) = v.get("model").and_then(Value::as_str) {
                     view.model = Some(m.to_string());
                 }
+                if let Some(m) = v.get("permissionMode").and_then(Value::as_str) {
+                    view.permission_mode = Some(m.to_string());
+                }
+                return true;
+            }
+            false
+        }
+        "control_response" => {
+            // Answers to our own requests (mode / model switches); surface failures.
+            let r = v.get("response").cloned().unwrap_or(Value::Null);
+            if r.get("subtype").and_then(Value::as_str) == Some("error") {
+                view.last_error = Some(r.get("error").and_then(Value::as_str).unwrap_or("Claude Code rejected the request").to_string());
                 return true;
             }
             false
