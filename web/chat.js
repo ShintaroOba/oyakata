@@ -39,6 +39,7 @@
     </div>
     <div class="composer">
       <div class="pending-cards"></div>
+      <div class="queued-msgs"></div>
       <div class="activity" hidden><span class="act-glyph">✻</span><span class="act-verb"></span><span class="act-detail"></span><span class="act-meta"></span></div>
       <div class="prompt-box">
         <span class="prompt-glyph">&gt;</span>
@@ -75,6 +76,7 @@
       this.starting = false;
       this.awaitingTranscript = false;
       this.pendingKey = '';
+      this.queuedKey = '';
       this.turnEls = [];
       this.lastStatus = this.session?.status || null;
       this.doneFlash = null;
@@ -266,7 +268,8 @@
       }
       const secs = t.ts ? (Date.now() - new Date(t.ts).getTime()) / 1000 : null;
       const canInterrupt = s.owner === 'oyakata' || (s.owner === 'terminal' && s.live?.typeable && state.config.can_type !== false);
-      const meta = [secs != null ? fmtDuration(secs) : '', canInterrupt ? 'esc で中断' : ''].filter(Boolean).join(' · ');
+      const queued = s.owner === 'oyakata' ? (this.run?.queued?.length || 0) : 0;
+      const meta = [secs != null ? fmtDuration(secs) : '', queued ? `指示 ${queued} 件待機中` : '', canInterrupt ? 'esc で中断' : ''].filter(Boolean).join(' · ');
       set('busy', '✻', `${craftVerb(t.idx)}…`, detail, meta ? `(${meta})` : '');
     }
 
@@ -553,12 +556,20 @@
       const send = this.q('.send-btn');
       let ph = '';
       let disabled = false;
-      let canSend = true;
       const pending = s?.owner === 'oyakata' && s.status === 'waiting' ? (this.run?.pending || []) : [];
       const key = pending.map((p) => p.request_id).join(',');
       if (key !== this.pendingKey) {
         this.pendingKey = key;
         if (pending.length) this.renderPendingCards(pending); else this.q('.pending-cards').innerHTML = '';
+      }
+      // Prompts Claude has not taken up yet (sent mid-task, or just sent): shown here until
+      // they land in the transcript.
+      const queued = s?.owner === 'oyakata' ? (this.run?.queued || []) : [];
+      const qkey = queued.map((q) => `${q.sent_at}:${q.text}`).join('\n');
+      if (qkey !== this.queuedKey) {
+        this.queuedKey = qkey;
+        this.q('.queued-msgs').innerHTML = queued.map((q) =>
+          `<div class="qmsg" title="送信済み。Claude が次のツール呼び出しの区切り（その前に今の作業が終わればその直後）で読みます"><span class="qm-glyph">⏳</span><span class="qm-text">${esc(q.text)}</span><span class="qm-note">次の区切りで渡します</span></div>`).join('');
       }
       const tips = 'Enter で送信 · Shift+Enter で改行 · Shift+Tab で権限モード';
       if (this.isDraft()) {
@@ -568,7 +579,7 @@
         disabled = true;
       } else if (s.owner === 'oyakata') {
         if (pending.length) { disabled = true; ph = '上のカードに答えると続きます'; }
-        else if (s.status === 'busy') { canSend = false; ph = '作業中です（Esc で中断）。終わったら次の指示を送れます'; }
+        else if (s.status === 'busy') ph = '作業中に指示を送る…（次の区切りで Claude に渡ります · Esc で中断）';
         else ph = `指示を入力…（${tips}）`;
       } else if (s.owner === 'terminal') {
         if (state.config.can_type === false || !s.live?.typeable) {
@@ -585,7 +596,7 @@
       }
       ta.disabled = disabled;
       ta.placeholder = ph;
-      send.disabled = disabled || !canSend;
+      send.disabled = disabled;
       this.renderStatusline();
     }
     renderPendingCards(pending) {

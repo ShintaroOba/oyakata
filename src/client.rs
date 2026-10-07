@@ -400,7 +400,7 @@ pub fn attach(client: &Client, id: &str, allow_resume: bool, defaults: &StartArg
         print!("> ");
         std::io::stdout().flush()?;
     } else {
-        println!("{DIM}（Claude が作業中…）{RST}");
+        println!("{DIM}（Claude が作業中… そのまま入力すると、次の区切りで Claude に渡します）{RST}");
     }
 
     loop {
@@ -512,6 +512,9 @@ pub fn attach(client: &Client, id: &str, allow_resume: bool, defaults: &StartArg
                 }
                 match client.post_json(&format!("/api/run/{id}/send"), &json!({ "text": line })) {
                     Ok(_) => {
+                        if status == "busy" {
+                            println!("{DIM}（作業中なので、次の区切りで Claude に渡します）{RST}");
+                        }
                         status = "busy".into();
                     }
                     Err(e) => println!("{RED}{e}{RST}"),

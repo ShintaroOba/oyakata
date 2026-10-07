@@ -30,6 +30,18 @@ pub struct PermissionRequest {
     pub received_at: u64,
 }
 
+/// A prompt written to stdin while Claude was busy. Claude Code holds it and takes it up at
+/// the next tool boundary (steering), or as the next turn if the current one ends first.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct QueuedMessage {
+    pub text: String,
+    pub sent_at: u64,
+}
+
+/// How long after a turn ends we wait for Claude to take up a still-queued prompt before
+/// concluding it was dropped. Normally the next turn's replay arrives within ~2 s.
+const QUEUE_GRACE: Duration = Duration::from_secs(10);
+
 #[derive(Debug, Clone, Serialize)]
 pub struct RunView {
     pub session_id: String,
@@ -37,6 +49,13 @@ pub struct RunView {
     /// `busy` | `idle` | `waiting` | `exited`
     pub status: String,
     pub pending: Vec<PermissionRequest>,
+    /// Prompts sent that Claude has not taken up yet (`--replay-user-messages` echoes each one
+    /// back the moment it does).
+    pub queued: Vec<QueuedMessage>,
+    /// When a turn ended with prompts still queued: the time of that `result`, so the
+    /// watchdog can tell whether Claude has moved on since.
+    #[serde(skip)]
+    awaiting_queued: Option<u64>,
     pub started_at: u64,
     pub model: Option<String>,
     pub permission_mode: Option<String>,
@@ -158,6 +177,7 @@ impl RunnerRegistry {
             "--output-format",
             "stream-json",
             "--verbose",
+            "--replay-user-messages",
             "--permission-prompt-tool",
             "stdio",
         ]);
@@ -202,6 +222,8 @@ impl RunnerRegistry {
             cwd: opts.cwd.display().to_string(),
             status: "busy".into(),
             pending: Vec::new(),
+            queued: Vec::new(),
+            awaiting_queued: None,
             started_at: now_ms(),
             model: opts.model.clone(),
             permission_mode: Some(permission_mode.clone()),
@@ -237,6 +259,12 @@ impl RunnerRegistry {
                         if handle_event(&view, &v) {
                             reg.notify(&id);
                         }
+                        if v.get("type").and_then(Value::as_str) == Some("result") {
+                            let stamp = view.lock().unwrap_or_else(|e| e.into_inner()).awaiting_queued;
+                            if let Some(stamp) = stamp {
+                                queue_watchdog(reg.clone(), view.clone(), id.clone(), stamp);
+                            }
+                        }
                     }
                 }
                 let code = child.lock().await.wait().await.ok().and_then(|s| s.code());
@@ -268,20 +296,23 @@ impl RunnerRegistry {
         Ok(session_id)
     }
 
+    /// Send a prompt. While Claude is busy it still goes to stdin: Claude Code holds it and
+    /// takes it up at the next tool boundary (or as the next turn), like typing into the
+    /// terminal mid-task. Until then it is listed in `queued`.
     pub async fn send(&self, id: &str, text: &str) -> Result<()> {
         let r = self.get(id)?;
         {
             let v = r.view.lock().unwrap_or_else(|e| e.into_inner());
             match v.status.as_str() {
-                "idle" => {}
+                "idle" | "busy" => {}
                 "exited" => bail!("session has exited; resume it to continue"),
-                "waiting" => bail!("answer the pending permission request first"),
-                _ => bail!("session is busy"),
+                _ => bail!("answer the pending permission request first"),
             }
         }
         r.write(&user_message(text)).await?;
         {
             let mut v = r.view.lock().unwrap_or_else(|e| e.into_inner());
+            v.queued.push(QueuedMessage { text: text.to_string(), sent_at: now_ms() });
             v.status = "busy".into();
             v.last_error = None;
         }
@@ -440,7 +471,15 @@ fn handle_event(view: &Arc<Mutex<RunView>>, v: &Value) -> bool {
             true
         }
         "result" => {
-            view.status = "idle".into();
+            if view.queued.is_empty() {
+                view.status = "idle".into();
+                view.awaiting_queued = None;
+            } else {
+                // Claude Code takes the queued prompts up as the next turn: stay busy rather
+                // than flashing idle (and ringing the done chime) in between.
+                view.status = "busy".into();
+                view.awaiting_queued = Some(now_ms());
+            }
             view.turns += 1;
             if let Some(c) = v.get("total_cost_usd").and_then(Value::as_f64) {
                 view.total_cost_usd = c;
@@ -465,11 +504,36 @@ fn handle_event(view: &Arc<Mutex<RunView>>, v: &Value) -> bool {
             true
         }
         "assistant" => {
+            view.awaiting_queued = None;
             if view.status == "idle" {
                 view.status = "busy".into();
                 return true;
             }
             false
+        }
+        "user" => {
+            // `--replay-user-messages`: Claude Code echoes a prompt from stdin at the moment it
+            // takes it up, which is when it leaves our queue.
+            if v.get("isReplay").and_then(Value::as_bool) != Some(true) {
+                return false;
+            }
+            view.awaiting_queued = None;
+            let text = prompt_text(v);
+            let pos = view
+                .queued
+                .iter()
+                .position(|q| text.as_deref() == Some(q.text.as_str()))
+                .or_else(|| (!view.queued.is_empty()).then_some(0));
+            let mut changed = false;
+            if let Some(i) = pos {
+                view.queued.remove(i);
+                changed = true;
+            }
+            if view.status == "idle" {
+                view.status = "busy".into();
+                changed = true;
+            }
+            changed
         }
         "system" => {
             if v.get("subtype").and_then(Value::as_str) == Some("init") {
@@ -498,6 +562,45 @@ fn handle_event(view: &Arc<Mutex<RunView>>, v: &Value) -> bool {
 
 fn user_message(text: &str) -> Value {
     json!({ "type": "user", "message": { "role": "user", "content": text } })
+}
+
+/// The text of a user message as Claude Code replays it (a string, or text blocks).
+fn prompt_text(v: &Value) -> Option<String> {
+    match v.get("message")?.get("content")? {
+        Value::String(s) => Some(s.clone()),
+        Value::Array(blocks) => {
+            let texts: Vec<&str> = blocks
+                .iter()
+                .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+                .filter_map(|b| b.get("text").and_then(Value::as_str))
+                .collect();
+            (!texts.is_empty()).then(|| texts.join("\n"))
+        }
+        _ => None,
+    }
+}
+
+/// A turn ended while prompts were still queued. If Claude has not taken one up (or started
+/// anything else) within the grace period, treat them as dropped: go idle and say so.
+fn queue_watchdog(reg: Arc<RunnerRegistry>, view: Arc<Mutex<RunView>>, id: String, stamp: u64) {
+    tokio::spawn(async move {
+        tokio::time::sleep(QUEUE_GRACE).await;
+        {
+            let mut v = view.lock().unwrap_or_else(|e| e.into_inner());
+            if v.awaiting_queued != Some(stamp) || v.status != "busy" {
+                return;
+            }
+            v.awaiting_queued = None;
+            v.status = "idle".into();
+            let dropped = std::mem::take(&mut v.queued).len();
+            if dropped > 0 {
+                v.last_error = Some(format!(
+                    "作業中に送った指示 {dropped} 件が Claude に渡りませんでした。もう一度送ってください。"
+                ));
+            }
+        }
+        reg.notify(&id);
+    });
 }
 
 fn now_ms() -> u64 {
