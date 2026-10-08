@@ -52,7 +52,7 @@
         if (mode !== 'edit') btns.push(t('<button type="button" class="btn small act" data-act="edit">テキスト</button>'));
         if (isMd && mode !== 'render') btns.push(t('<button type="button" class="btn small act" data-act="render">プレビュー</button>'));
         if (isDoc && mode !== 'preview') btns.push(t('<button type="button" class="btn small act" data-act="preview">プレビュー</button>'));
-        if (mode === 'edit') btns.push(t('<button type="button" class="btn small primary act" data-act="save" title="Ctrl+S">保存</button>'));
+        if (mode === 'edit' && !isMd) btns.push(t('<button type="button" class="btn small primary act" data-act="save" title="Ctrl+S">保存</button>'));
       }
       if (rel != null && root) btns.push(t('<button type="button" class="btn small act" data-act="diff">差分</button>'));
       btns.push(t('<button type="button" class="btn small act" data-act="reload">再読込</button>'));
