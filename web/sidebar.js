@@ -5,12 +5,12 @@
   'use strict';
   const { $, $$, esc, api, state, bus, LS, toast, ago, sessionTitle, basename, norm, joinPath, modal, confirmDialog, showOutput } = OY;
 
-  const VIEWS = ['sessions', 'explorer', 'search', 'git'];
+  const VIEWS = ['sessions', 'explorer', 'search', 'git', 'worktrees'];
   const sb = {
     view: LS.get('sb.view', 'sessions'),
     mode: LS.get('sb.mode', 'single'),
     collapsed: new Set(LS.get('sb.collapsed', [])),
-    sizes: LS.get('sb.sizes', { sessions: 1.2, explorer: 1, search: 1, git: 1 }),
+    sizes: LS.get('sb.sizes', { sessions: 1.2, explorer: 1, search: 1, git: 1, worktrees: 1 }),
     compact: LS.get('sb.compact', true),
     groupsCollapsed: new Set(LS.get('collapsed', [])),
     filter: '',
@@ -28,7 +28,7 @@
     const stack = sb.mode === 'stack';
     views.classList.toggle('stack', stack);
     $('#sb-mode').classList.toggle('on', stack);
-    $('#sb-mode').textContent = stack ? t('並べて表示中') : t('並べて表示');
+    $('#sb-mode').title = stack ? t('並べて表示中（クリックで 1 つずつの表示に戻す）') : t('すべてのビューを縦に並べて表示（境目はドラッグで高さを変えられます）');
     $$('.sb-vsplit', views).forEach((s) => s.remove());
     for (const v of $$('.sb-view', views)) {
       const name = v.dataset.view;
@@ -51,6 +51,7 @@
       }
     }
     for (const b of $$('#sb-switch .sw[data-view]')) b.classList.toggle('active', !stack && b.dataset.view === sb.view);
+    bus.emit('sb-view', stack ? 'stack' : sb.view);
   }
   function startViewResize(h, e) {
     const a = $(`.sb-view[data-view="${h.dataset.a}"]`);

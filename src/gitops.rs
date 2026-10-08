@@ -756,41 +756,171 @@ pub struct Worktree {
     pub branch: Option<String>,
     /// The main checkout (first entry of `git worktree list`).
     pub main: bool,
+    /// The commit checked out; `None` before the first commit.
+    pub head: Option<String>,
+    pub detached: bool,
+    pub locked: bool,
+    /// The folder is gone, so `git worktree prune` would drop the entry.
+    pub prunable: bool,
 }
 
 /// `git worktree list --porcelain`.
 pub fn worktrees(repo: &Path) -> Result<Vec<Worktree>> {
     let out = run_ok(repo, &["worktree", "list", "--porcelain"])?;
+    Ok(parse_worktrees(&out))
+}
+
+fn parse_worktrees(out: &str) -> Vec<Worktree> {
     let mut list: Vec<Worktree> = Vec::new();
-    for block in out.split("\n\n") {
-        let mut path = None;
-        let mut branch = None;
+    for block in out.replace("\r\n", "\n").split("\n\n") {
+        let mut wt = Worktree { path: String::new(), branch: None, main: list.is_empty(), head: None, detached: false, locked: false, prunable: false };
         for line in block.lines() {
             if let Some(p) = line.strip_prefix("worktree ") {
-                path = Some(p.trim().to_string());
+                // git prints C:/x/y on Windows; show it the way the rest of the UI does.
+                wt.path = if cfg!(windows) { p.trim().replace('/', "\\") } else { p.trim().to_string() };
             } else if let Some(b) = line.strip_prefix("branch refs/heads/") {
-                branch = Some(b.trim().to_string());
+                wt.branch = Some(b.trim().to_string());
+            } else if let Some(h) = line.strip_prefix("HEAD ") {
+                wt.head = Some(h.trim().to_string()).filter(|h| !h.is_empty() && !h.chars().all(|c| c == '0'));
+            } else if line == "detached" {
+                wt.detached = true;
+            } else if line == "locked" || line.starts_with("locked ") {
+                wt.locked = true;
+            } else if line == "prunable" || line.starts_with("prunable ") {
+                wt.prunable = true;
             }
         }
-        if let Some(path) = path {
-            let main = list.is_empty();
-            list.push(Worktree { path, branch, main });
+        if !wt.path.is_empty() {
+            list.push(wt);
         }
     }
-    Ok(list)
+    list
+}
+
+/// Whether `root` (a main checkout) has any linked worktree, without running git.
+pub fn has_linked_worktrees(root: &Path) -> bool {
+    std::fs::read_dir(root.join(".git").join("worktrees")).map(|mut d| d.next().is_some()).unwrap_or(false)
+}
+
+/// A linked worktree and what removing it would lose.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorktreeState {
+    #[serde(flatten)]
+    pub wt: Worktree,
+    /// Uncommitted and untracked files (`git status` entries); `None` when unreadable.
+    pub changes: Option<usize>,
+    /// Commits in the worktree that the main checkout's HEAD does not have.
+    pub ahead: Option<usize>,
+    /// Commits on the main checkout's HEAD that the worktree does not have.
+    pub behind: Option<usize>,
+    /// The worktree's last commit.
+    pub date: Option<String>,
+    pub subject: Option<String>,
+}
+
+/// The linked worktrees of `repo` (not the main checkout) with their state, and the branch
+/// the main checkout is on (what "merged" is measured against). Every git call is a process
+/// start, which is slow on Windows, so the independent ones run side by side.
+pub fn worktree_states(repo: &Path) -> Result<(Option<String>, Vec<WorktreeState>)> {
+    let list = worktrees(repo)?;
+    let base = list.first().and_then(|w| w.branch.clone());
+    let mut states: Vec<WorktreeState> = list
+        .into_iter()
+        .filter(|w| !w.main)
+        .map(|wt| WorktreeState { wt, changes: None, ahead: None, behind: None, date: None, subject: None })
+        .collect();
+    let branches: Vec<String> = states.iter().filter_map(|s| s.wt.branch.clone()).collect();
+    let tips = std::thread::scope(|sc| {
+        let tips = sc.spawn(|| branch_tips(repo, &branches));
+        for st in states.iter_mut() {
+            sc.spawn(move || count_changes(st));
+        }
+        tips.join().ok().flatten()
+    });
+    for st in states.iter_mut() {
+        let tip = st.wt.branch.as_ref().and_then(|b| tips.as_ref()?.get(b));
+        if let Some((ahead, behind, date, subject)) = tip {
+            st.ahead = Some(*ahead);
+            st.behind = Some(*behind);
+            st.date = Some(date.clone());
+            st.subject = Some(subject.clone());
+        }
+    }
+    // Detached worktrees, and git before 2.41 (no `%(ahead-behind)`), one by one.
+    std::thread::scope(|sc| {
+        for st in states.iter_mut().filter(|s| s.ahead.is_none()) {
+            sc.spawn(move || commit_info(repo, st));
+        }
+    });
+    Ok((base, states))
+}
+
+/// Uncommitted and untracked files. `--no-optional-locks` keeps `git status` from writing the
+/// index, which could collide with an agent running git in the same worktree.
+fn count_changes(st: &mut WorktreeState) {
+    let dir = PathBuf::from(&st.wt.path);
+    if !dir.is_dir() {
+        st.wt.prunable = true;
+    } else if let Ok(o) = run(&dir, &["--no-optional-locks", "status", "--porcelain", "--untracked-files=normal"]) {
+        if o.ok() {
+            st.changes = Some(o.stdout.lines().filter(|l| !l.trim().is_empty()).count());
+        }
+    }
+}
+
+/// branch -> (ahead of HEAD, behind HEAD, last commit date, subject), in one call.
+fn branch_tips(repo: &Path, branches: &[String]) -> Option<std::collections::HashMap<String, (usize, usize, String, String)>> {
+    let mut map = std::collections::HashMap::new();
+    if branches.is_empty() {
+        return Some(map);
+    }
+    let mut args: Vec<String> = vec!["for-each-ref".into(), "--format=%(refname)%00%(ahead-behind:HEAD)%00%(committerdate:iso-strict)%00%(subject)".into()];
+    args.extend(branches.iter().map(|b| format!("refs/heads/{b}")));
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let o = run(repo, &args).ok()?;
+    if !o.ok() {
+        return None;
+    }
+    for line in o.stdout.lines() {
+        let f: Vec<&str> = line.split('\0').collect();
+        let [name, counts, date, subject] = f[..] else { continue };
+        let Some(name) = name.strip_prefix("refs/heads/") else { continue };
+        let mut n = counts.split_whitespace().filter_map(|x| x.parse::<usize>().ok());
+        let (Some(ahead), Some(behind)) = (n.next(), n.next()) else { continue };
+        map.insert(name.to_string(), (ahead, behind, date.to_string(), subject.to_string()));
+    }
+    Some(map)
+}
+
+fn commit_info(repo: &Path, st: &mut WorktreeState) {
+    let Some(head) = st.wt.head.clone() else { return };
+    if let Ok(o) = run(repo, &["rev-list", "--left-right", "--count", &format!("HEAD...{head}")]) {
+        if o.ok() {
+            let mut n = o.stdout.split_whitespace().filter_map(|x| x.parse::<usize>().ok());
+            st.behind = n.next();
+            st.ahead = n.next();
+        }
+    }
+    if let Ok(o) = run(repo, &["log", "-1", "--format=%cI%x1f%s", &head]) {
+        if let Some((d, s)) = o.stdout.trim().split_once('\x1f') {
+            st.date = Some(d.to_string());
+            st.subject = Some(s.to_string());
+        }
+    }
 }
 
 /// What `remove_worktree` did with the branch.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct WorktreeRemoval {
     pub branch: Option<String>,
-    /// The branch was merged (or empty) and `git branch -d` removed it.
+    /// The branch was deleted: it was merged (or empty), or `delete_branch` asked for it.
     pub branch_deleted: bool,
 }
 
 /// Remove a linked worktree of `repo` (never the main checkout), then delete its branch if
-/// git considers it merged (`git branch -d`); an unmerged branch is kept.
-pub fn remove_worktree(repo: &Path, path: &Path, force: bool) -> Result<WorktreeRemoval> {
+/// git considers it merged (`git branch -d`); an unmerged branch is kept unless
+/// `delete_branch` is set (`git branch -D`). A worktree whose folder is already gone is pruned.
+pub fn remove_worktree(repo: &Path, path: &Path, force: bool, delete_branch: bool) -> Result<WorktreeRemoval> {
     let want = crate::repo::normalize(path);
     let list = worktrees(repo)?;
     let wt = list
@@ -800,19 +930,26 @@ pub fn remove_worktree(repo: &Path, path: &Path, force: bool) -> Result<Worktree
     if wt.main {
         bail!("the main checkout cannot be removed");
     }
-    let p = wt.path.clone();
-    let mut args = vec!["worktree", "remove"];
-    if force {
-        args.push("--force");
-    }
-    args.push(&p);
-    let o = run(repo, &args)?;
-    if !o.ok() {
-        bail!("git worktree remove: {}", o.combined());
+    if wt.prunable || !Path::new(&wt.path).is_dir() {
+        let o = run(repo, &["worktree", "prune"])?;
+        if !o.ok() {
+            bail!("git worktree prune: {}", o.combined());
+        }
+    } else {
+        let p = wt.path.clone();
+        let mut args = vec!["worktree", "remove"];
+        if force {
+            args.push("--force");
+        }
+        args.push(&p);
+        let o = run(repo, &args)?;
+        if !o.ok() {
+            bail!("git worktree remove: {}", o.combined());
+        }
     }
     let mut branch_deleted = false;
     if let Some(b) = &wt.branch {
-        branch_deleted = run(repo, &["branch", "-d", b]).map(|o| o.ok()).unwrap_or(false);
+        branch_deleted = run(repo, &["branch", if delete_branch { "-D" } else { "-d" }, b]).map(|o| o.ok()).unwrap_or(false);
     }
     Ok(WorktreeRemoval { branch: wt.branch.clone(), branch_deleted })
 }
@@ -921,5 +1058,86 @@ mod tests {
         assert_eq!(clone_dest(r, "git@github.com:acme/widget.git", true), Some(PathBuf::from("/g/github.com/acme/widget")));
         assert_eq!(clone_dest(r, "ssh://git@gitlab.example.com:2222/team/app", true), Some(PathBuf::from("/g/gitlab.example.com/team/app")));
         assert_eq!(clone_dest(r, "https://github.com/acme/widget", false), Some(PathBuf::from("/g/widget")));
+    }
+
+    #[test]
+    fn parses_worktree_list() {
+        let out = "worktree C:/r/widget\nHEAD 1111111111111111111111111111111111111111\nbranch refs/heads/main\n\n\
+                   worktree C:/w/fix-1\nHEAD 2222222222222222222222222222222222222222\nbranch refs/heads/oyakata/fix-1\nlocked\n\n\
+                   worktree C:/w/gone\nHEAD 3333333333333333333333333333333333333333\ndetached\nprunable gitdir file points to non-existent location\n";
+        let list = parse_worktrees(out);
+        assert_eq!(list.len(), 3);
+        assert!(list[0].main && !list[1].main && !list[2].main);
+        assert_eq!(list[1].branch.as_deref(), Some("oyakata/fix-1"));
+        assert!(list[1].locked && !list[1].prunable);
+        assert_eq!(list[2].branch, None);
+        assert!(list[2].detached && list[2].prunable);
+        assert_eq!(list[2].head.as_deref(), Some("3333333333333333333333333333333333333333"));
+    }
+
+    #[test]
+    fn worktree_states_and_removal() {
+        let tmp = std::env::temp_dir().join(format!("oyk-wt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let main = tmp.join("widget");
+        std::fs::create_dir_all(&main).unwrap();
+        let git = |dir: &Path, args: &[&str]| {
+            let o = run(dir, &[&["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"][..], args].concat()).unwrap();
+            assert!(o.ok(), "git {args:?}: {}", o.combined());
+        };
+        git(&main, &["init", "-q", "-b", "main"]);
+        std::fs::write(main.join("a.txt"), "a\n").unwrap();
+        git(&main, &["add", "-A"]);
+        git(&main, &["commit", "-q", "-m", "first"]);
+        assert!(!has_linked_worktrees(&main));
+
+        let merged = tmp.join("wt").join("merged");
+        let work = tmp.join("wt").join("work");
+        add_worktree(&main, &merged, "oyakata/merged").unwrap();
+        add_worktree(&main, &work, "oyakata/work").unwrap();
+        assert!(has_linked_worktrees(&main));
+        std::fs::write(work.join("b.txt"), "b\n").unwrap();
+        git(&work, &["add", "-A"]);
+        git(&work, &["commit", "-q", "-m", "work in progress"]);
+        std::fs::write(work.join("c.txt"), "c\n").unwrap();
+
+        let (base, states) = worktree_states(&main).unwrap();
+        assert_eq!(base.as_deref(), Some("main"));
+        assert_eq!(states.len(), 2);
+        let get = |b: &str| states.iter().find(|s| s.wt.branch.as_deref() == Some(b)).unwrap().clone();
+        let m = get("oyakata/merged");
+        assert_eq!((m.changes, m.ahead, m.behind), (Some(0), Some(0), Some(0)));
+        let w = get("oyakata/work");
+        assert_eq!((w.changes, w.ahead, w.behind), (Some(1), Some(1), Some(0)));
+        assert_eq!(w.subject.as_deref(), Some("work in progress"));
+        // The fallback for git before 2.41 agrees with for-each-ref.
+        let mut old = WorktreeState { ahead: None, behind: None, date: None, subject: None, ..w.clone() };
+        commit_info(&main, &mut old);
+        assert_eq!((old.ahead, old.behind, old.date.clone(), old.subject.clone()), (w.ahead, w.behind, w.date.clone(), w.subject.clone()));
+
+        // A merged worktree goes together with its branch.
+        let r = remove_worktree(&main, &merged, false, false).unwrap();
+        assert!(r.branch_deleted);
+        assert!(!merged.exists());
+        // Uncommitted changes need force; an unmerged branch stays unless asked.
+        assert!(remove_worktree(&main, &work, false, false).is_err());
+        let r = remove_worktree(&main, &work, true, false).unwrap();
+        assert!(!r.branch_deleted);
+        assert!(!work.exists());
+        git(&main, &["rev-parse", "--verify", "-q", "refs/heads/oyakata/work"]);
+
+        // A worktree whose folder was deleted by hand is pruned, and -D drops its branch.
+        let gone = tmp.join("wt").join("gone");
+        add_worktree(&main, &gone, "oyakata/gone").unwrap();
+        std::fs::write(gone.join("d.txt"), "d\n").unwrap();
+        git(&gone, &["add", "-A"]);
+        git(&gone, &["commit", "-q", "-m", "lost"]);
+        std::fs::remove_dir_all(&gone).unwrap();
+        let (_, states) = worktree_states(&main).unwrap();
+        assert!(states.iter().find(|s| s.wt.branch.as_deref() == Some("oyakata/gone")).unwrap().wt.prunable);
+        let r = remove_worktree(&main, &gone, false, true).unwrap();
+        assert!(r.branch_deleted);
+        assert!(worktree_states(&main).unwrap().1.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

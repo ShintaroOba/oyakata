@@ -123,10 +123,11 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--border)
 .brand-mark.big { width: 96px; height: 96px; border-radius: 22px; margin: 0 auto 10px; }
 .sb-actions { display: flex; gap: 2px; }
 .sb-switch { display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--border); align-items: center; }
-.sw { border: none; background: none; padding: 4px 9px; border-radius: 6px; font-size: 12px; cursor: pointer; color: var(--fg-muted); }
+.sw { border: none; background: none; padding: 4px 7px; border-radius: 6px; font-size: 12px; cursor: pointer; color: var(--fg-muted); white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sw:hover { background: var(--bg-elev); }
 .sw.active { background: var(--bg-elev); color: var(--fg); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
-.sw.mode.on { color: var(--accent); }
+.sw.mode { font-size: 14px; line-height: 1; padding: 4px 6px; flex: none; }
+.sw.mode.on { color: var(--accent); background: var(--accent-soft); }
 .sb-views { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .sb-view { display: none; flex-direction: column; min-height: 0; }
 .sb-view.visible { display: flex; flex: 1; }
@@ -149,7 +150,7 @@ body.resizing-x iframe, body.resizing-y iframe { pointer-events: none; }
 .sb-search { padding: 8px 10px 4px; }
 .sb-search input { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev); color: var(--fg); outline: none; }
 .sb-search input:focus { border-color: var(--accent); }
-#session-list, #repo-tree, #git-body { flex: 1; overflow: auto; padding: 4px 8px 12px; }
+#session-list, #repo-tree, #git-body, #wt-body { flex: 1; overflow: auto; padding: 4px 8px 12px; }
 .sb-section { margin-top: 6px; }
 .sb-section > h3 { margin: 0; padding: 8px 6px 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--fg-muted); display: flex; justify-content: space-between; align-items: center; }
 .sb-section.live > h3 { color: var(--accent); }
@@ -773,3 +774,26 @@ table.keys td:first-child { white-space: nowrap; width: 1%; }
 .statusline .sl-wt.on { border-style: solid; color: var(--accent); border-color: var(--accent); }
 .statusline .sl-wt:disabled { cursor: default; }
 .row-wt { color: var(--accent); }
+.wt-note { margin: 4px 4px 6px; font-size: 11px; color: var(--fg-muted); line-height: 1.5; }
+.wt-note code { font-size: 10.5px; word-break: break-all; }
+.wt-head { display: flex; align-items: center; gap: 4px; padding: 2px 4px 4px; }
+.wt-sum { font-size: 11px; color: var(--fg-muted); }
+.wt-acts { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; }
+.wt-row:hover .wt-acts, .wt-row:focus-within .wt-acts { opacity: 1; }
+.wt-btn { border: 1px solid var(--border); background: var(--bg-elev); border-radius: 6px; font-size: 12px; min-width: 24px; height: 24px; padding: 0 4px; cursor: pointer; color: inherit; }
+.wt-btn:hover { border-color: var(--accent); }
+.wt-btn.wt-del:hover { border-color: var(--err); }
+.wt-btn:disabled { opacity: 0.4; cursor: not-allowed; border-color: var(--border); }
+.wt-row .row-meta .chip.tiny { margin: 0 4px 0 0; }
+.wt-row.st-clean .dot { background: var(--idle); }
+.wt-row.st-dirty .dot { background: var(--busy); }
+.wt-row.st-ahead .dot { background: var(--accent); }
+.wt-row.st-missing .dot { background: var(--err); }
+.chip.wt-run { color: var(--busy); background: color-mix(in srgb, var(--busy) 16%, var(--bg-elev)); border-color: transparent; }
+.chip.wt-warn { color: var(--busy); border-color: var(--busy); }
+.chip.wt-ahead { color: var(--accent); border-color: var(--accent); }
+.chip.wt-ok { color: var(--idle); border-color: color-mix(in srgb, var(--idle) 50%, var(--border)); }
+.g-empty.err, .wt-warn-text { color: var(--err); }
+.wt-warn-text { font-weight: 600; }
+.wt-check { display: flex; align-items: center; gap: 6px; cursor: pointer; margin: 8px 0 2px; }
+.wt-list { margin: 8px 0 0; padding-left: 20px; max-height: 240px; overflow: auto; font-size: 12px; }

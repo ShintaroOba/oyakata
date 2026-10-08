@@ -381,25 +381,12 @@
       else if (act === 'team') OY.team.open(this.id);
       else if (act === 'logs') { OY.setShowLogs(!state.showLogs); toast(state.showLogs ? t('作業ログを表示します') : t('作業ログを隠しました（会話だけを表示）')); }
       else if (act === 'tree') { if (this.session) OY.followSession(this.session); OY.sidebar.show('explorer'); }
-      else if (act === 'wt-remove' && s?.repo?.worktree) this.removeWorktree(s.repo.worktree, s.repo.branch);
+      else if (act === 'wt-remove' && s?.repo?.worktree) OY.worktrees.remove(s.repo.worktree);
       else if (act === 'copy-id') copyText(this.id);
       else if (act === 'end') {
         if (!(await OY.confirmDialog(t('セッションを終了'), `${t("OYAKATA 側の")} ${this.who()} ${t("プロセスを終了します。会話は残るので、あとからこの画面で続きを送れば再開できます。")}`, { label: t('終了'), danger: true }))) return;
         try { await api.post(`/api/run/${encodeURIComponent(this.id)}/stop`); } catch (e) { toast(e.message); }
       } else if (act === 'delete' && s) OY.deleteSession(this.id);
-    }
-    /// Remove this session's worktree (and its branch, if merged). Uncommitted changes make
-    /// git refuse; then ask again before forcing.
-    async removeWorktree(path, branch) {
-      const msg = `${esc(path)}<br>${t('この worktree のフォルダを消します。ブランチ')} <code>${esc(branch || '')}</code> ${t('は、マージ済みなら一緒に消し、そうでなければ残します。会話の記録は残ります。')}`;
-      if (!(await OY.confirmDialog(t('worktree を削除'), msg, { label: t('削除'), danger: true }))) return;
-      const done = (r) => toast(r.branch_deleted ? t('worktree とブランチを削除しました') : r.branch ? `${t('worktree を削除しました。ブランチは残しています:')} ${r.branch}` : t('worktree を削除しました'));
-      try { done(await api.post('/api/worktree/remove', { path })); return; }
-      catch (e) {
-        if (e.status !== 409) { toast(e.message); return; }
-        if (!(await OY.confirmDialog(t('未コミットの変更があります'), `${esc(e.message)}<br>${t('変更を捨てて削除しますか？')}`, { label: t('変更を捨てて削除'), danger: true }))) return;
-      }
-      try { done(await api.post('/api/worktree/remove', { path, force: true })); } catch (e) { toast(e.message); }
     }
     jumpTo(idx) {
       while (this.renderedFrom > idx) this.loadMore(true);

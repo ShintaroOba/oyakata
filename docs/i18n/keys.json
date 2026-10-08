@@ -219,6 +219,9 @@
  "Git リポジトリでは新しい worktree を作って作業します（ステータス行の ⎇ で切替）。": [
   "app.js"
  ],
+ "Git リポジトリで新しいセッションを始めると、ここに並びます。": [
+  "worktrees.js"
+ ],
  "IDE や SDK で動いているセッションには送れません（終了後に引き継げます）": [
   "chat.js"
  ],
@@ -292,17 +295,45 @@
  "push 待ち": [
   "sidebar.js"
  ],
+ "worktree が見つかりません（すでに削除されています）": [
+  "worktrees.js"
+ ],
  "worktree とブランチを削除しました": [
-  "chat.js"
+  "worktrees.js"
+ ],
+ "worktree の一覧と削除": [
+  "index.html"
+ ],
+ "worktree はありません。": [
+  "worktrees.js"
  ],
  "worktree を削除": [
-  "chat.js"
+  "chat.js",
+  "worktrees.js"
  ],
  "worktree を削除しました": [
-  "chat.js"
+  "worktrees.js"
  ],
  "worktree を削除しました。ブランチは残しています:": [
-  "chat.js"
+  "worktrees.js"
+ ],
+ "worktree を片付ける": [
+  "worktrees.js"
+ ],
+ "{base} にないコミット": [
+  "worktrees.js"
+ ],
+ "{base} にないコミットが {n} 件あります。チェックしなければブランチは残り、あとから git で取り出せます。": [
+  "worktrees.js"
+ ],
+ "{n} 件": [
+  "worktrees.js"
+ ],
+ "{n} 件の worktree を削除しました": [
+  "worktrees.js"
+ ],
+ "{n} 件を削除": [
+  "worktrees.js"
  ],
  "· 変更": [
   "chat.js"
@@ -355,8 +386,8 @@
  "ここで始める": [
   "sidebar.js"
  ],
- "この worktree のフォルダを消します。ブランチ": [
-  "chat.js"
+ "この worktree ではセッションが動いています。終わってから削除してください。": [
+  "worktrees.js"
  ],
  "このサイトは埋め込み表示を許可していないため、右横の別ウィンドウとして開きます。": [
   "editors.js"
@@ -392,6 +423,9 @@
   "chat.js"
  ],
  "すべて": [
+  "sidebar.js"
+ ],
+ "すべてのビューを縦に並べて表示（境目はドラッグで高さを変えられます）": [
   "sidebar.js"
  ],
  "すべての会話": [
@@ -445,9 +479,6 @@
  "の候補": [
   "code.js"
  ],
- "は、マージ済みなら一緒に消し、そうでなければ残します。会話の記録は残ります。": [
-  "chat.js"
- ],
  "はこのリポジトリに見つかりません": [
   "code.js"
  ],
@@ -500,7 +531,8 @@
  "キャンセル": [
   "app.js",
   "editors.js",
-  "sidebar.js"
+  "sidebar.js",
+  "worktrees.js"
  ],
  "キーボードショートカット": [
   "app.js"
@@ -610,9 +642,6 @@
  "セッションを開く…": [
   "app.js"
  ],
- "セッション・ツリー・Git を縦に並べて同時に表示（境目はドラッグで高さを変えられます）": [
-  "index.html"
- ],
  "セッション一覧": [
   "index.html"
  ],
@@ -659,7 +688,8 @@
   "app.js"
  ],
  "ツリーと Git を開く": [
-  "sidebar.js"
+  "sidebar.js",
+  "worktrees.js"
  ],
  "ツール結果の画像": [
   "app.js"
@@ -707,6 +737,15 @@
  "ファイル名で検索（> コマンド  : 行へ移動  @ セッション）": [
   "palette.js"
  ],
+ "フォルダが見つかりません": [
+  "worktrees.js"
+ ],
+ "フォルダなし": [
+  "worktrees.js"
+ ],
+ "フォルダはすでにありません。git に残っている記録を消します。": [
+  "worktrees.js"
+ ],
  "フォルダを 1 階層ずつ表示します": [
   "sidebar.js"
  ],
@@ -718,6 +757,12 @@
  ],
  "ブランチ": [
   "sidebar.js"
+ ],
+ "ブランチ {branch} は、マージ済みなら一緒に削除し、そうでなければ残します。": [
+  "worktrees.js"
+ ],
+ "ブランチ {branch} も削除する": [
+  "worktrees.js"
  ],
  "プロジェクトツリー（Ctrl+Shift+E）": [
   "index.html"
@@ -805,6 +850,9 @@
  "一致するセッションはありません": [
   "sidebar.js"
  ],
+ "一覧": [
+  "index.html"
+ ],
  "一覧から外す": [
   "sidebar.js"
  ],
@@ -832,11 +880,7 @@
  "不明な種類:": [
   "workbench.js"
  ],
- "並べて表示": [
-  "index.html",
-  "sidebar.js"
- ],
- "並べて表示中": [
+ "並べて表示中（クリックで 1 つずつの表示に戻す）": [
   "sidebar.js"
  ],
  "中断": [
@@ -882,6 +926,9 @@
  "会話の記録はゴミ箱（~/.oyakata/trash）に移り、30 日後に消えます。": [
   "app.js"
  ],
+ "会話の記録は残ります。": [
+  "worktrees.js"
+ ],
  "会話へ": [
   "team.js"
  ],
@@ -906,6 +953,9 @@
  ],
  "何をしましょう？（": [
   "chat.js"
+ ],
+ "作成先:": [
+  "worktrees.js"
  ],
  "作業ツリー": [
   "editors.js"
@@ -1025,10 +1075,17 @@
  ],
  "削除": [
   "app.js",
-  "chat.js"
+  "chat.js",
+  "worktrees.js"
  ],
  "削除しました": [
   "app.js"
+ ],
+ "削除できなかった worktree": [
+  "worktrees.js"
+ ],
+ "削除中… {i}/{n}": [
+  "worktrees.js"
  ],
  "前のセッションからの引き継ぎ要約": [
   "app.js"
@@ -1064,17 +1121,20 @@
  "変更": [
   "sidebar.js"
  ],
+ "変更 {n}": [
+  "worktrees.js"
+ ],
  "変更したファイル": [
   "chat.js"
+ ],
+ "変更なし": [
+  "worktrees.js"
  ],
  "変更の要約": [
   "sidebar.js"
  ],
  "変更を捨てて削除": [
-  "chat.js"
- ],
- "変更を捨てて削除しますか？": [
-  "chat.js"
+  "worktrees.js"
  ],
  "外す": [
   "sidebar.js"
@@ -1207,6 +1267,12 @@
  "新しいセッションは Git の worktree を作って作業する": [
   "index.html"
  ],
+ "新しいセッションは worktree を作って作業します（設定で変更できます）。": [
+  "worktrees.js"
+ ],
+ "新しいセッションは元のフォルダで作業します（設定で worktree を使うようにできます）。": [
+  "worktrees.js"
+ ],
  "新しいタブ": [
   "editors.js"
  ],
@@ -1254,16 +1320,38 @@
  ],
  "更新": [
   "sidebar.js",
-  "team.js"
+  "team.js",
+  "worktrees.js"
  ],
  "書込": [
   "chat.js"
  ],
+ "最後のセッションを開く: {title}": [
+  "worktrees.js"
+ ],
  "最近": [
   "palette.js"
  ],
- "未コミットの変更があります": [
-  "chat.js"
+ "未コミットの変更": [
+  "worktrees.js"
+ ],
+ "未コミットの変更が {n} 件あります。削除すると失われます。": [
+  "worktrees.js"
+ ],
+ "未コミットの変更が増えています。内容を確認してください。": [
+  "worktrees.js"
+ ],
+ "未コミットの変更も、{base} にないコミットもありません": [
+  "worktrees.js"
+ ],
+ "未コミットの変更も、マージされていないコミットもない worktree を削除します。フォルダが消えているものは、git の記録を消します。マージされていないブランチは残します。": [
+  "worktrees.js"
+ ],
+ "未コミットの変更も未マージのコミットもない worktree をまとめて削除": [
+  "worktrees.js"
+ ],
+ "未マージ {n}": [
+  "worktrees.js"
  ],
  "未送信コミット": [
   "sidebar.js"
@@ -1307,6 +1395,9 @@
  "準備中": [
   "team.js"
  ],
+ "片付ける": [
+  "worktrees.js"
+ ],
  "特大": [
   "index.html"
  ],
@@ -1320,7 +1411,8 @@
   "app.js"
  ],
  "稼働中": [
-  "sidebar.js"
+  "sidebar.js",
+  "worktrees.js"
  ],
  "空のセッションも一覧に出す": [
   "index.html"
@@ -1372,6 +1464,9 @@
   "app.js"
  ],
  "表示: Git": [
+  "app.js"
+ ],
+ "表示: Worktree（一覧と削除）": [
   "app.js"
  ],
  "表示: サイドバーの表示 / 非表示": [
@@ -1437,7 +1532,8 @@
   "chat.js"
  ],
  "読み込み中…": [
-  "sidebar.js"
+  "sidebar.js",
+  "worktrees.js"
  ],
  "読み込み直す": [
   "editors.js"

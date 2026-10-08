@@ -86,6 +86,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/run/{id}/mode", post(run_mode))
         .route("/api/run/{id}/model", post(run_model))
         .route("/api/run/{id}/stop", post(run_stop))
+        .route("/api/worktrees", get(worktree_list))
         .route("/api/worktree/remove", post(worktree_remove))
         .route("/api/terminal/{id}/send", post(terminal_send))
         .route("/api/terminal/{id}/interrupt", post(terminal_interrupt))
@@ -243,6 +244,7 @@ async fn asset(Path(path): Path<String>) -> Response {
         "search.js" => embedded!("search.js", JS, NO_CACHE),
         "editors.js" => embedded!("editors.js", JS, NO_CACHE),
         "sidebar.js" => embedded!("sidebar.js", JS, NO_CACHE),
+        "worktrees.js" => embedded!("worktrees.js", JS, NO_CACHE),
         "style.css" => embedded!("style.css", CSS, NO_CACHE),
         "icon.svg" => embedded!("icon.svg", SVG, NO_CACHE),
         "vendor/codemirror.js" => embedded!("vendor/codemirror.js", JS, LONG_CACHE),
@@ -948,7 +950,7 @@ async fn run_start(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Re
             // Don't leave an unused worktree behind when the agent failed to start.
             if let Some((path, _)) = &worktree {
                 if let Some(main) = crate::repo::detect(&path.to_string_lossy()).root {
-                    let _ = gitops::remove_worktree(std::path::Path::new(&main), path, true);
+                    let _ = gitops::remove_worktree(std::path::Path::new(&main), path, true, true);
                 }
             }
             err(StatusCode::BAD_REQUEST, format!("{e:#}"))
@@ -1021,9 +1023,65 @@ mod worktree_tests {
 
 /// `{"path": "<worktree>", "force": false}`: remove a linked worktree (not while a session
 /// runs in it) and delete its branch when merged.
+/// Linked worktrees of every known repository that has any, with uncommitted changes and
+/// commits not on the main checkout's branch, so the browser can tell what removal loses.
+async fn worktree_list(AxState(app): AxState<Shared>) -> Response {
+    let (roots, dir) = {
+        let mut st = lock(&app);
+        let mut seen = std::collections::HashSet::new();
+        let mut roots: Vec<(String, String)> = Vec::new();
+        for r in st.repos() {
+            if r.is_git && seen.insert(crate::repo::normalize(std::path::Path::new(&r.root))) {
+                roots.push((r.root, r.name));
+            }
+        }
+        for s in st.summaries() {
+            if let (Some(_), Some(root)) = (&s.repo.worktree, &s.repo.root) {
+                if seen.insert(crate::repo::normalize(std::path::Path::new(root))) {
+                    roots.push((root.clone(), s.repo.name.clone()));
+                }
+            }
+        }
+        (roots, st.worktrees_dir())
+    };
+    let dir_key = crate::repo::normalize(&dir);
+    let r = tokio::task::spawn_blocking(move || {
+        let roots: Vec<(String, String)> = roots.into_iter().filter(|(root, _)| gitops::has_linked_worktrees(std::path::Path::new(root))).collect();
+        std::thread::scope(|sc| {
+            let handles: Vec<_> = roots.iter().map(|(root, name)| sc.spawn(|| repo_worktrees(root, name, &dir_key))).collect();
+            handles.into_iter().filter_map(|h| h.join().ok()).collect::<Vec<Value>>()
+        })
+    })
+    .await;
+    match r {
+        Ok(repos) => Json(json!({ "repos": repos, "dir": dir.display().to_string() })).into_response(),
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+fn repo_worktrees(root: &str, name: &str, dir_key: &str) -> Value {
+    match gitops::worktree_states(std::path::Path::new(root)) {
+        Ok((base, list)) => {
+            let worktrees: Vec<Value> = list
+                .iter()
+                .map(|w| {
+                    let mut v = serde_json::to_value(w).unwrap_or(Value::Null);
+                    // Created by OYAKATA (under its worktree folder) rather than by hand.
+                    v["oyakata"] = Value::Bool(crate::repo::normalize(std::path::Path::new(&w.wt.path)).starts_with(&format!("{dir_key}/")));
+                    v
+                })
+                .collect();
+            json!({ "root": root, "name": name, "base": base, "worktrees": worktrees })
+        }
+        Err(e) => json!({ "root": root, "name": name, "error": format!("{e:#}"), "worktrees": [] }),
+    }
+}
+
 async fn worktree_remove(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Response {
     let Some(path) = body_str(&body, "path").map(PathBuf::from) else { return bad("path is required") };
     let force = body.get("force").and_then(Value::as_bool).unwrap_or(false);
+    // Also delete a branch that is not merged (`git branch -D`).
+    let delete_branch = body.get("delete_branch").and_then(Value::as_bool).unwrap_or(false);
     let busy = {
         let st = lock(&app);
         let key = crate::repo::normalize(&path);
@@ -1039,8 +1097,10 @@ async fn worktree_remove(AxState(app): AxState<Shared>, Json(body): Json<Value>)
         return err(StatusCode::CONFLICT, tr("この worktree ではセッションが動いています。終わってから削除してください。", "A session is running in this worktree. Wait for it to finish."));
     }
     let r = tokio::task::spawn_blocking(move || -> anyhow::Result<gitops::WorktreeRemoval> {
-        let main = crate::repo::detect(&path.to_string_lossy()).root.ok_or_else(|| anyhow::anyhow!("{} is not in a git repository", path.display()))?;
-        gitops::remove_worktree(std::path::Path::new(&main), &path, force)
+        // A worktree whose folder is gone can't be detected from the folder: find it in the
+        // repository given by the browser.
+        let main = body_str(&body, "root").map(str::to_string).or_else(|| crate::repo::detect(&path.to_string_lossy()).root).ok_or_else(|| anyhow::anyhow!("{} is not in a git repository", path.display()))?;
+        gitops::remove_worktree(std::path::Path::new(&main), &path, force, delete_branch)
     })
     .await;
     match r {

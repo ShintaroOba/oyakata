@@ -77,8 +77,10 @@ While OYAKATA is open, this session's replies are rendered as HTML. Follow these
   `oyakata/<name>` checked out under `~/.oyakata/worktrees/<repository>/<name>`, so parallel
   sessions never edit the same files. The ⎇ button on the status line (before the first
   message), the Settings checkbox, or `oyakata new --no-worktree` work in the folder itself
-  instead. When done, merge the branch, end the session and pick "Remove worktree" from the
-  chat's ⋯ menu (the branch is deleted only if merged).
+  instead. When done, merge the branch and end the session. The sidebar's Worktree tab lists
+  every worktree with its uncommitted and unmerged work, removes them one by one, or removes
+  all that have nothing to lose with "Clean up" ("Remove worktree" in the chat's ⋯ menu also
+  works). A branch is deleted only if merged, unless the user ticks the box.
 - A session OYAKATA owns can also be typed into from a terminal with `oyakata attach <id>`
   (alongside the browser). `/quit` detaches the terminal, `/stop` ends the session.
 - For long-running use, suggest starting the daemon from a terminal (`oyakata`) rather

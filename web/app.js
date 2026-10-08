@@ -1071,6 +1071,7 @@
     c(t('表示: セッション一覧'), () => OY.sidebar.show('sessions'), '', '☰');
     c(t('表示: ツリー'), () => OY.sidebar.show('explorer'), 'Ctrl+Shift+E', '🌲');
     c(t('表示: Git'), () => OY.sidebar.show('git'), 'Ctrl+Shift+G', '⎇');
+    c(t('表示: Worktree（一覧と削除）'), () => OY.sidebar.show('worktrees'), '', '⎇');
     c(t('表示: サイドバーの表示 / 非表示'), () => toggleSidebar(), 'Ctrl+B', '◧');
     c(t('表示: 作業ログの表示 / 非表示'), () => { setShowLogs(!state.showLogs); toast(state.showLogs ? t('作業ログを表示します') : t('作業ログを隠しました')); }, '', '👁');
     c(t('表示: ライト / ダーク切替'), () => toggleTheme(), 't', '◐');
@@ -1130,6 +1131,7 @@
     $('#set-sound').addEventListener('change', (e) => OY.fx.setSound(e.target.checked));
     $('#set-sound-test').addEventListener('click', () => OY.fx.hyoshigi({ force: true }));
     $('#set-keys').addEventListener('click', () => { $('#settings').hidden = true; showKeys(); });
+    $('#set-worktrees').addEventListener('click', () => { $('#settings').hidden = true; OY.sidebar.show('worktrees'); });
     $('#set-reset-layout').addEventListener('click', () => { OY.wb.reset(); $('#settings').hidden = true; });
     $('#set-lang')?.addEventListener('change', async (e) => {
       const lang = e.target.value;
@@ -1190,6 +1192,7 @@
     registerCommands();
     OY.wb.init($('#workbench'));
     OY.sidebar.init();
+    OY.worktrees.init();
     try { state.config = await api.get('/api/config'); } catch { state.config = {}; }
     renderSettings();
     if (!OY.i18n.chosen()) {

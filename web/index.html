@@ -27,8 +27,9 @@
       <button class="sw" data-view="explorer" title="プロジェクトツリー（Ctrl+Shift+E）">ツリー</button>
       <button class="sw" data-view="search" title="全文検索（Ctrl+Shift+F）">検索</button>
       <button class="sw" data-view="git" title="Git（Ctrl+Shift+G）">Git</button>
+      <button class="sw" data-view="worktrees" title="worktree の一覧と削除">Worktree</button>
       <span class="spacer"></span>
-      <button class="sw mode" id="sb-mode" title="セッション・ツリー・Git を縦に並べて同時に表示（境目はドラッグで高さを変えられます）">並べて表示</button>
+      <button class="sw mode" id="sb-mode" title="すべてのビューを縦に並べて表示（境目はドラッグで高さを変えられます）">▤</button>
     </div>
     <div class="sb-views" id="sb-views">
       <section class="sb-view" id="sb-sessions" data-view="sessions">
@@ -68,6 +69,10 @@
         <h4 class="sb-view-title" hidden><span>Git</span><button class="collapse" title="折り畳む">▾</button></h4>
         <div class="sb-view-body" id="git-body"></div>
       </section>
+      <section class="sb-view" id="sb-worktrees" data-view="worktrees">
+        <h4 class="sb-view-title" hidden><span>Worktree</span><button class="collapse" title="折り畳む">▾</button></h4>
+        <div class="sb-view-body" id="wt-body"></div>
+      </section>
     </div>
     <footer class="sb-foot">
       <span id="conn" class="conn">接続中…</span>
@@ -93,7 +98,7 @@
     <label class="field check"><input type="checkbox" id="set-show-empty"> 空のセッションも一覧に出す</label>
     <label class="field check"><input type="checkbox" id="set-stamp"> 承認したら判子を押す</label>
     <div class="field check"><label><input type="checkbox" id="set-sound"> 終わったら音を鳴らす</label><button class="btn small" id="set-sound-test" type="button">試しに鳴らす</button></div>
-    <label class="field check"><input type="checkbox" id="set-worktree"> 新しいセッションは Git の worktree を作って作業する</label>
+    <div class="field check"><label><input type="checkbox" id="set-worktree"> 新しいセッションは Git の worktree を作って作業する</label><button class="btn small" id="set-worktrees" type="button">一覧</button></div>
     <div class="field agents"><span>エージェント</span><div id="set-agents" class="agents-list"></div></div>
     <div class="field"><span>ショートカット</span><button class="btn" id="set-keys" type="button">一覧を見る</button></div>
     <div class="field"><span>レイアウト</span><button class="btn" id="set-reset-layout">ペイン配置を初期化</button></div>
@@ -118,6 +123,7 @@
 <script src="/assets/editors.js"></script>
 <script src="/assets/search.js"></script>
 <script src="/assets/sidebar.js"></script>
+<script src="/assets/worktrees.js"></script>
 <script>OY.init();</script>
 </body>
 </html>
