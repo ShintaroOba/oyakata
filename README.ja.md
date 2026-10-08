@@ -137,7 +137,7 @@ curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/in
 irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex
 ```
 
-この手順は飛ばしても構いません。Claude Code で初めて `/oyakata` と打ったとき、本体が無ければ Claude がプラグイン同梱の同じスクリプトを実行します。置き場所は `OYAKATA_INSTALL_DIR`、版は `OYAKATA_VERSION=v0.4.0` で指定できます。ダウンロードは `HTTPS_PROXY`（curl）/ システムのプロキシ設定（PowerShell）に従います。
+この手順は飛ばしても構いません。Claude Code で初めて `/oyakata` と打ったとき、本体が無ければ Claude がプラグイン同梱の同じスクリプトを実行します。置き場所は `OYAKATA_INSTALL_DIR`、版は `OYAKATA_VERSION=v0.1.0` で指定できます。ダウンロードは `HTTPS_PROXY`（curl）/ システムのプロキシ設定（PowerShell）に従います。
 
 Rust（1.80 以上）がある環境なら、ソースからビルドしても入ります。
 
@@ -348,7 +348,7 @@ cargo run -- serve --no-open
 リリースは、`Cargo.toml` と `.claude-plugin/plugin.json` の `version` を同じ番号に上げてから `vX.Y.Z` のタグを push します。`.github/workflows/release.yml` が 6 つのターゲットをビルドして GitHub Release に添付し、インストールスクリプトはそこから取ります。
 
 ```bash
-git tag v0.4.0 && git push origin v0.4.0
+git tag v0.1.0 && git push origin v0.1.0
 ```
 
 ```

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs the oyakata binary from GitHub Releases. No Rust toolchain needed.
 #
-#   sh scripts/install.sh [version]      # default: latest; e.g. sh scripts/install.sh v0.4.0
+#   sh scripts/install.sh [version]      # default: latest; e.g. sh scripts/install.sh v0.1.0
 #   curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.sh | sh
 #
 # Environment:

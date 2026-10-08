@@ -1,6 +1,6 @@
 [package]
 name = "oyakata"
-version = "0.4.0"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
 description = "Browser-based command post for Claude Code sessions across repositories: list, switch, and read them as rendered HTML."

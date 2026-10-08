@@ -140,7 +140,7 @@ curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/in
 irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex
 ```
 
-You can also skip this step: the first time you type `/oyakata` in Claude Code and the binary is missing, Claude runs the same script, bundled with the plugin. Set `OYAKATA_INSTALL_DIR` to change the location and `OYAKATA_VERSION=v0.4.0` to pin a release. Downloads honor `HTTPS_PROXY` (curl) or the system proxy settings (PowerShell).
+You can also skip this step: the first time you type `/oyakata` in Claude Code and the binary is missing, Claude runs the same script, bundled with the plugin. Set `OYAKATA_INSTALL_DIR` to change the location and `OYAKATA_VERSION=v0.1.0` to pin a release. Downloads honor `HTTPS_PROXY` (curl) or the system proxy settings (PowerShell).
 
 With a Rust toolchain (1.80+) you can build from source instead:
 
@@ -351,7 +351,7 @@ cargo run -- serve --no-open
 To release, bump `version` in `Cargo.toml` and `.claude-plugin/plugin.json` to the same number and push a `vX.Y.Z` tag. `.github/workflows/release.yml` builds six targets and attaches the archives to a GitHub Release, which is where the install scripts download from.
 
 ```bash
-git tag v0.4.0 && git push origin v0.4.0
+git tag v0.1.0 && git push origin v0.1.0
 ```
 
 ```
