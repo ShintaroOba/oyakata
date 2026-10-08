@@ -1,0 +1,17 @@
+{
+  "name": "oyakata",
+  "description": "OYAKATA（親方）— Claude Code のセッションをブラウザから見渡して指示を送る司令塔",
+  "owner": {
+    "name": "Shintaro Oba",
+    "url": "https://github.com/ShintaroOba"
+  },
+  "plugins": [
+    {
+      "name": "oyakata",
+      "source": ".",
+      "description": "/oyakata スキル: OYAKATA の司令塔画面を開き、以後の応答を図は Mermaid・比較は表で書く。本体の oyakata コマンドは別途 cargo install --git https://github.com/ShintaroOba/oyakata",
+      "category": "developer-tools",
+      "tags": ["claude-code", "sessions", "viewer"]
+    }
+  ]
+}

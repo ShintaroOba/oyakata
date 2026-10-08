@@ -436,6 +436,7 @@ fn install(claude_dir: &Path, skills_dir: Option<PathBuf>, force: bool) -> Resul
     }
     println!();
     println!("Use it from any Claude Code session with: /oyakata");
+    println!("(Alternatively install it as a plugin: claude plugin marketplace add ShintaroOba/oyakata && claude plugin install oyakata@oyakata)");
     println!("Optional, to make every session prefer Mermaid diagrams, add to ~/.claude/CLAUDE.md:");
     println!("  図は ```mermaid フェンスで書く（OYAKATA がブラウザで描画する）。ASCIIアートで図を描かない。");
     Ok(())
@@ -509,4 +510,15 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    /// The plugin manifest pins the version users stay on, so it must move with the crate.
+    #[test]
+    fn plugin_manifest_version_matches_crate() {
+        let manifest: serde_json::Value = serde_json::from_str(include_str!("../.claude-plugin/plugin.json")).unwrap();
+        assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(manifest["name"], "oyakata");
+    }
 }
