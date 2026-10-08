@@ -2,7 +2,7 @@
   "name": "oyakata",
   "displayName": "OYAKATA",
   "version": "0.4.0",
-  "description": "親方: Claude Code のセッションをリポジトリ横断でブラウザから見渡し、指示を送る司令塔。/oyakata で開く（本体の oyakata コマンドは cargo install --git https://github.com/ShintaroOba/oyakata で入れる）",
+  "description": "親方: Claude Code のセッションをリポジトリ横断でブラウザから見渡し、指示を送る司令塔。/oyakata で開く。本体の oyakata コマンドが無ければ、同梱のスクリプトが GitHub Releases のビルド済みバイナリを入れる（Rust 不要）",
   "author": {
     "name": "Shintaro Oba",
     "url": "https://github.com/ShintaroOba"

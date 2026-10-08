@@ -22,12 +22,18 @@ oyakata --focus <session-id> # 引数あり: そのセッションを開く
 
 標準出力の `OYAKATA is open at http://127.0.0.1:4848/...` の URL を、そのままユーザーに伝える。
 
-`oyakata: command not found` の場合は、インストール方法を案内して止まる。別のコマンドを推測で試さない。
+`oyakata: command not found` の場合は、同梱のスクリプトで GitHub Releases のビルド済みバイナリを入れる（Rust は不要）。別のコマンドを推測で試さない。
 
 ```bash
-cargo install --git https://github.com/ShintaroOba/oyakata
-oyakata install   # /oyakata スキルを ~/.claude/skills に入れる
+# macOS / Linux
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/install.sh"
+# Windows（Bash ツールは Git Bash なので、そこから PowerShell を呼ぶ）
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/install.ps1"
 ```
+
+- スクリプトは最後に `Installed: <パス>` と出す。このセッションの PATH には反映されないので、以降はそのパスで実行する（新しいターミナルからは `oyakata` で呼べる）。
+- `${CLAUDE_PLUGIN_ROOT}` が展開されていない（プラグインではなく `~/.claude/skills` に置かれている）場合は、同じスクリプトを GitHub から取る: `curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.sh | sh`（Windows: `irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex`）。
+- Rust がある環境なら `cargo install --git https://github.com/ShintaroOba/oyakata` でもよい。
 
 ## Step 2: 以降の応答は「ブラウザで読まれる」前提で書く
 

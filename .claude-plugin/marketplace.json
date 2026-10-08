@@ -9,7 +9,7 @@
     {
       "name": "oyakata",
       "source": ".",
-      "description": "/oyakata スキル: OYAKATA の司令塔画面を開き、以後の応答を図は Mermaid・比較は表で書く。本体の oyakata コマンドは別途 cargo install --git https://github.com/ShintaroOba/oyakata",
+      "description": "/oyakata スキル: OYAKATA の司令塔画面を開き、以後の応答を図は Mermaid・比較は表で書く。本体の oyakata コマンドが無ければ同梱スクリプトで GitHub Releases のビルド済みバイナリを入れる（Rust 不要）",
       "category": "developer-tools",
       "tags": ["claude-code", "sessions", "viewer"]
     }

@@ -101,8 +101,9 @@ Nothing leaves your machine. There are no runtime dependencies. You do not need 
 ## Quick start
 
 ```bash
-# 1. Install the binary (needs Rust 1.80+)
-cargo install --git https://github.com/ShintaroOba/oyakata
+# 1. Install the binary (prebuilt from GitHub Releases, no Rust needed)
+curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.sh | sh   # macOS / Linux
+irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex       # Windows (PowerShell)
 
 # 2. Install the /oyakata skill as a Claude Code plugin
 claude plugin marketplace add ShintaroOba/oyakata
@@ -120,12 +121,28 @@ Then, inside any Claude Code session, type `/oyakata` to open the command post f
 
 | | |
 | --- | --- |
-| Rust | 1.80 or newer (for `cargo install`) |
+| Rust | Not needed: prebuilt binaries are attached to every release. 1.80 or newer only if you build from source |
 | Claude Code | The `claude` CLI, for sessions started from OYAKATA |
 | git | For the file tree, diffs and git operations |
 | OS | Windows, macOS, Linux. Typing into a terminal-run session is Windows only. |
 
 ### 1. Install the `oyakata` binary
+
+Prebuilt binaries for Windows (x64 / arm64), macOS (Intel / Apple Silicon) and Linux (x64 / arm64, statically linked) are attached to every [GitHub Release](https://github.com/ShintaroOba/oyakata/releases). The install scripts download the one for your machine, verify its SHA-256 and put it on your PATH:
+
+```bash
+# macOS / Linux: installs to ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.sh | sh
+```
+
+```powershell
+# Windows: installs to %LOCALAPPDATA%\Programs\oyakata and adds it to your user PATH
+irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex
+```
+
+You can also skip this step: the first time you type `/oyakata` in Claude Code and the binary is missing, Claude runs the same script, bundled with the plugin. Set `OYAKATA_INSTALL_DIR` to change the location and `OYAKATA_VERSION=v0.4.0` to pin a release. Downloads honor `HTTPS_PROXY` (curl) or the system proxy settings (PowerShell).
+
+With a Rust toolchain (1.80+) you can build from source instead:
 
 ```bash
 cargo install --git https://github.com/ShintaroOba/oyakata
@@ -331,6 +348,12 @@ cargo test
 cargo run -- serve --no-open
 ```
 
+To release, bump `version` in `Cargo.toml` and `.claude-plugin/plugin.json` to the same number and push a `vX.Y.Z` tag. `.github/workflows/release.yml` builds six targets and attaches the archives to a GitHub Release, which is where the install scripts download from.
+
+```bash
+git tag v0.4.0 && git push origin v0.4.0
+```
+
 ```
 src/
   main.rs        CLI (start, daemon, stop, skill install)
@@ -358,7 +381,9 @@ web/
   sidebar.js     sessions / tree / Git (commit, push, pull), delete, add repository
   vendor/        bundled libraries (marked, DOMPurify, highlight.js, Mermaid, CodeMirror 5)
 skills/oyakata/  the /oyakata skill
+scripts/         install.sh / install.ps1 (download a prebuilt binary from GitHub Releases)
 .claude-plugin/  plugin and marketplace manifests
+.github/workflows/release.yml  builds six targets on a version tag and publishes the release
 ```
 
 ## License

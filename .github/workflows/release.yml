@@ -1,0 +1,103 @@
+# Builds the oyakata binary for every supported platform and attaches the archives to a
+# GitHub Release, so scripts/install.sh, scripts/install.ps1 and the /oyakata skill can
+# install OYAKATA without a Rust toolchain.
+#
+# Publish: bump `version` in Cargo.toml and .claude-plugin/plugin.json, then push a tag
+# `vX.Y.Z` with the same number. A manual run (workflow_dispatch) only builds the archives
+# as workflow artifacts and publishes nothing.
+#
+# Asset names carry the target triple but not the version, so the installers can fetch
+# `releases/latest/download/<asset>` without calling the GitHub API.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Tag must match Cargo.toml and plugin.json
+        if: github.ref_type == 'tag'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          crate=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          plugin=$(jq -r .version .claude-plugin/plugin.json)
+          echo "tag=$tag crate=$crate plugin=$plugin"
+          [ "$tag" = "$crate" ] && [ "$tag" = "$plugin" ]
+      - run: cargo test --locked
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-pc-windows-msvc,     os: windows-latest }
+          - { target: aarch64-pc-windows-msvc,    os: windows-latest }
+          - { target: x86_64-apple-darwin,        os: macos-latest }
+          - { target: aarch64-apple-darwin,       os: macos-latest }
+          - { target: x86_64-unknown-linux-musl,  os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install the musl linker
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update -q && sudo apt-get install -y -q musl-tools
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          set -eu
+          name="oyakata-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp LICENSE README.md "dist/$name/"
+          sha256() { if command -v sha256sum > /dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi; }
+          if [ "$RUNNER_OS" = Windows ]; then
+            cp "target/${{ matrix.target }}/release/oyakata.exe" "dist/$name/"
+            (cd dist && 7z a -tzip -bso0 "$name.zip" "$name" && sha256 "$name.zip" > "$name.zip.sha256")
+          else
+            cp "target/${{ matrix.target }}/release/oyakata" "dist/$name/"
+            (cd dist && tar -czf "$name.tar.gz" "$name" && sha256 "$name.tar.gz" > "$name.tar.gz.sha256")
+          fi
+          rm -r "dist/$name"
+          ls -l dist && cat dist/*.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oyakata-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          ls -l dist
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber

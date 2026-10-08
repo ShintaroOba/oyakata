@@ -98,8 +98,9 @@ OYAKATA は 1 つの Rust バイナリです。ローカルに小さなサーバ
 ## クイックスタート
 
 ```bash
-# 1. 本体を入れる（Rust 1.80 以上）
-cargo install --git https://github.com/ShintaroOba/oyakata
+# 1. 本体を入れる（GitHub Releases のビルド済みバイナリ。Rust は不要）
+curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.sh | sh   # macOS / Linux
+irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex       # Windows (PowerShell)
 
 # 2. /oyakata スキルを Claude Code のプラグインとして入れる
 claude plugin marketplace add ShintaroOba/oyakata
@@ -117,12 +118,28 @@ oyakata
 
 | | |
 | --- | --- |
-| Rust | 1.80 以上（`cargo install` 用） |
+| Rust | 不要。リリースごとにビルド済みバイナリを添付。ソースからビルドする場合のみ 1.80 以上 |
 | Claude Code | `claude` コマンド（OYAKATA からセッションを起動するため） |
 | git | ファイルツリー・差分・Git 操作のため |
 | OS | Windows / macOS / Linux。ターミナルで稼働中のセッションへの打ち込みは Windows のみ |
 
 ### 1. 本体（`oyakata` コマンド）を入れる
+
+Windows（x64 / arm64）、macOS（Intel / Apple Silicon）、Linux（x64 / arm64、静的リンク）のビルド済みバイナリを [GitHub Release](https://github.com/ShintaroOba/oyakata/releases) に添付しています。インストールスクリプトが環境に合うものを取り、SHA-256 を照合して PATH の通る場所に置きます。
+
+```bash
+# macOS / Linux: ~/.local/bin に置く
+curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.sh | sh
+```
+
+```powershell
+# Windows: %LOCALAPPDATA%\Programs\oyakata に置き、ユーザーの PATH に加える
+irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex
+```
+
+この手順は飛ばしても構いません。Claude Code で初めて `/oyakata` と打ったとき、本体が無ければ Claude がプラグイン同梱の同じスクリプトを実行します。置き場所は `OYAKATA_INSTALL_DIR`、版は `OYAKATA_VERSION=v0.4.0` で指定できます。ダウンロードは `HTTPS_PROXY`（curl）/ システムのプロキシ設定（PowerShell）に従います。
+
+Rust（1.80 以上）がある環境なら、ソースからビルドしても入ります。
 
 ```bash
 cargo install --git https://github.com/ShintaroOba/oyakata
@@ -328,6 +345,12 @@ cargo test
 cargo run -- serve --no-open
 ```
 
+リリースは、`Cargo.toml` と `.claude-plugin/plugin.json` の `version` を同じ番号に上げてから `vX.Y.Z` のタグを push します。`.github/workflows/release.yml` が 6 つのターゲットをビルドして GitHub Release に添付し、インストールスクリプトはそこから取ります。
+
+```bash
+git tag v0.4.0 && git push origin v0.4.0
+```
+
 ```
 src/
   main.rs        CLI（起動・常駐・停止・スキル導入）
@@ -355,7 +378,9 @@ web/
   sidebar.js     セッション一覧 / ツリー / Git（commit・push・pull）、削除、リポジトリ追加
   vendor/        同梱ライブラリ（marked, DOMPurify, highlight.js, Mermaid, CodeMirror 5）
 skills/oyakata/  /oyakata スキル
+scripts/         install.sh / install.ps1（GitHub Releases のビルド済みバイナリを入れる）
 .claude-plugin/  プラグインとマーケットプレイスのマニフェスト
+.github/workflows/release.yml  バージョンタグで 6 ターゲットをビルドして Release を公開
 ```
 
 ## ライセンス
