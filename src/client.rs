@@ -262,6 +262,8 @@ pub struct StartArgs {
     pub prompt: String,
     pub resume: Option<String>,
     pub agent: Option<String>,
+    /// `Some(false)` runs in the folder itself instead of a new worktree.
+    pub worktree: Option<bool>,
     pub model: Option<String>,
     pub mode: Option<String>,
     pub effort: Option<String>,
@@ -270,8 +272,14 @@ pub struct StartArgs {
 pub fn start(client: &Client, a: &StartArgs) -> Result<String> {
     let v = client.post_json(
         "/api/run/start",
-        &json!({ "cwd": a.cwd, "prompt": a.prompt, "resume": a.resume, "agent": a.agent, "model": a.model, "permission_mode": a.mode, "effort": a.effort }),
+        &json!({ "cwd": a.cwd, "prompt": a.prompt, "resume": a.resume, "agent": a.agent, "worktree": a.worktree, "model": a.model, "permission_mode": a.mode, "effort": a.effort }),
     )?;
+    if !s(&v, "worktree").is_empty() {
+        println!("{DIM}{}: {} ({}){RST}", tr("worktree で作業します", "working in a worktree"), s(&v, "worktree"), s(&v, "branch"));
+    }
+    if !s(&v, "note").is_empty() {
+        println!("{DIM}{}{RST}", s(&v, "note"));
+    }
     Ok(s(&v, "session_id").to_string())
 }
 
@@ -355,7 +363,7 @@ pub fn attach(client: &Client, id: &str, allow_resume: bool, defaults: &StartArg
             .unwrap_or_else(|| defaults.cwd.clone());
         start(
             client,
-            &StartArgs { cwd, prompt: first.trim().to_string(), resume: Some(id.to_string()), agent: None, model: defaults.model.clone(), mode: defaults.mode.clone(), effort: defaults.effort.clone() },
+            &StartArgs { cwd, prompt: first.trim().to_string(), resume: Some(id.to_string()), agent: None, worktree: None, model: defaults.model.clone(), mode: defaults.mode.clone(), effort: defaults.effort.clone() },
         )?;
         run = find_run(client, id);
     }

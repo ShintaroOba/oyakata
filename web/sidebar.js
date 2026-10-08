@@ -94,7 +94,7 @@
   function isActive(s) { return s.status !== 'ended'; }
   function matches(s, q) {
     if (!q) return true;
-    const hay = [s.title, s.first_prompt, s.last_prompt, s.repo?.name, s.cwd, s.git_branch, s.live?.name, s.id].join(' ').toLowerCase();
+    const hay = [s.title, s.first_prompt, s.last_prompt, s.repo?.name, s.repo?.branch, s.cwd, s.git_branch, s.live?.name, s.id].join(' ').toLowerCase();
     return q.split(/\s+/).every((w) => hay.includes(w));
   }
   function rowHtml(s) {
@@ -103,17 +103,17 @@
     if (s.status !== 'ended') cls.push(s.status);
     const unread = state.unread.get(s.id) || 0;
     const name = s.live?.name ? `<span class="chip tiny">${esc(s.live.name)}</span>` : '';
-    const owner = s.owner === 'oyakata' ? t('<span class="chip tiny owner">親方</span>') : '';
     const agent = s.agent && s.agent !== 'claude' ? `<span class="chip tiny agent">${esc(OY.agentLabel(s.agent))}</span>` : '';
     const team = s.subagents ? `<span class="chip tiny" title="${t("サブエージェント")} ${s.subagents}">👥${s.subagents}</span>` : '';
     const sub = s.repo?.subdir ? ` <span class="row-sub">/${esc(s.repo.subdir)}</span>` : '';
-    const branch = s.git_branch && s.git_branch !== 'HEAD' ? ` · ${esc(s.git_branch)}` : '';
+    const wtBranch = s.repo?.worktree ? (s.repo.branch || basename(s.repo.worktree)) : '';
+    const branch = wtBranch ? ` · <span class="row-wt" title="${esc(s.repo.worktree)}">⎇ ${esc(wtBranch)}</span>` : s.git_branch && s.git_branch !== 'HEAD' ? ` · ${esc(s.git_branch)}` : '';
     const delTitle = s.status === 'ended' ? t('このセッションを削除') : s.owner === 'oyakata' ? t('終了してから削除') : s.owner === 'external' ? t('別のプロセスで動いています（終わると削除できます）') : t('ターミナルで動いています（終了すると削除できます）');
     const del = `<button type="button" class="row-del" title="${delTitle}">🗑</button>`;
     return `<div class="row ${cls.join(' ')}" draggable="true" data-id="${esc(s.id)}" title="${esc(sessionTitle(s))}">
       <span class="dot"></span>
       <span class="row-title">${esc(sessionTitle(s))}</span>
-      <span class="row-meta">${esc(ago(s.last_at))} · ${s.user_turns}${t("往復")}${branch}${sub}${agent}${name}${owner}${team}</span>
+      <span class="row-meta">${esc(ago(s.last_at))} · ${s.user_turns}${t("往復")}${branch}${sub}${agent}${name}${team}</span>
       ${unread ? `<span class="badge">${unread}</span>` : ''}${del}
     </div>`;
   }
@@ -193,6 +193,7 @@
     for (const r of state.repos) if (r.sessions > 0 || r.added) map.set(norm(r.root), { root: r.root, name: r.name });
     for (const s of state.sessions) {
       if (!(s.user_turns > 0 || isActive(s))) continue;
+      if (s.repo?.worktree) map.set(norm(s.repo.worktree), { root: s.repo.worktree, name: `${s.repo.name} ⎇ ${s.repo.branch || basename(s.repo.worktree)}` });
       if (s.repo?.root) map.set(norm(s.repo.root), { root: s.repo.root, name: s.repo.name });
       else if (s.cwd) map.set(norm(s.cwd), { root: s.cwd, name: s.cwd });
     }
@@ -215,11 +216,11 @@
   }
   async function loadTree(root, { force = false } = {}) {
     if (!root) { $('#repo-tree').innerHTML = t('<div class="sb-empty">リポジトリを選んでください</div>'); return; }
-    const t = sb.tree;
-    if (!force && norm(t.root) === norm(root) && t.files) { renderTree(); return; }
-    t.root = root;
-    t.files = null;
-    t.dirs = new Map();
+    const tree = sb.tree;
+    if (!force && norm(tree.root) === norm(root) && tree.files) { renderTree(); return; }
+    tree.root = root;
+    tree.files = null;
+    tree.dirs = new Map();
     sb.expanded = new Set();
     $('#repo-tree').innerHTML = t('<div class="loading">読み込み中…</div>');
     try {
@@ -229,15 +230,15 @@
         fetchStatus(root, force).catch(() => null),
         api.get(`/api/git/tree?root=${encodeURIComponent(root)}&tracked=1`).then((r) => r.files || []).catch(() => null),
       ]);
-      if (norm(t.root) !== norm(root)) return;
-      t.isGit = !!st;
-      t.status = st;
+      if (norm(tree.root) !== norm(root)) return;
+      tree.isGit = !!st;
+      tree.status = st;
       if (st) {
         const all = new Set(tracked || []);
         for (const e of st.entries || []) if (e.untracked) all.add(e.path);
-        t.files = [...all].sort();
-        OY.code.prime(root, t.files);
-      } else t.files = [];
+        tree.files = [...all].sort();
+        OY.code.prime(root, tree.files);
+      } else tree.files = [];
       renderTree();
     } catch (e) {
       $('#repo-tree').innerHTML = `<div class="loading err">${esc(e.message)}</div>`;
@@ -285,11 +286,11 @@
     return `<div class="tnode file${sb.activeFile === path ? ' active' : ''}" draggable="true" data-file="${esc(path)}" title="${esc(path)}"><span class="tcaret"></span><span class="ticon">${iconFor(name)}</span><span class="tname">${esc(name)}</span>${badge(stMap.get(path))}</div>`;
   }
   function renderTree() {
-    const t = sb.tree;
+    const tr = sb.tree;
     const el = $('#repo-tree');
-    if (!t.root) { el.innerHTML = t('<div class="sb-empty">リポジトリを選んでください</div>'); return; }
-    if (t.files === null) return; // still loading; loadTree renders when it is done
-    if (!t.isGit) { renderPlainTree(); return; }
+    if (!tr.root) { el.innerHTML = t('<div class="sb-empty">リポジトリを選んでください</div>'); return; }
+    if (tr.files === null) return; // still loading; loadTree renders when it is done
+    if (!tr.isGit) { renderPlainTree(); return; }
     const stMap = statusMap();
     const dirty = new Set();
     for (const p of stMap.keys()) {
@@ -298,11 +299,11 @@
     }
     const q = sb.treeFilter.trim().toLowerCase();
     if (q) {
-      const hits = (t.files || []).filter((f) => f.toLowerCase().includes(q)).slice(0, 500);
+      const hits = (tr.files || []).filter((f) => f.toLowerCase().includes(q)).slice(0, 500);
       el.innerHTML = hits.map((f) => fileNode(f, f, stMap)).join('') || t('<div class="empty-note">該当なし</div>');
       return;
     }
-    const tree = buildTree(t.files || []);
+    const tree = buildTree(tr.files || []);
     const render = (node) => {
       let h = '';
       for (const d of [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name))) {
@@ -340,16 +341,16 @@
   }
   async function renderPlainTree() {
     // Non-git folder: lazy directory listing.
-    const t = sb.tree;
+    const tree = sb.tree;
     const el = $('#repo-tree');
     const render = async (relDir) => {
-      const abs = relDir ? joinPath(t.root, relDir) : t.root;
-      if (!t.dirs.has(relDir)) {
-        try { t.dirs.set(relDir, (await api.get(`/api/fs/list?path=${encodeURIComponent(abs)}`)).entries || []); }
-        catch { t.dirs.set(relDir, []); }
+      const abs = relDir ? joinPath(tree.root, relDir) : tree.root;
+      if (!tree.dirs.has(relDir)) {
+        try { tree.dirs.set(relDir, (await api.get(`/api/fs/list?path=${encodeURIComponent(abs)}`)).entries || []); }
+        catch { tree.dirs.set(relDir, []); }
       }
       let h = '';
-      for (const e of t.dirs.get(relDir)) {
+      for (const e of tree.dirs.get(relDir)) {
         const p = relDir ? relDir + '/' + e.name : e.name;
         if (e.dir) {
           const open = sb.expanded.has(p);

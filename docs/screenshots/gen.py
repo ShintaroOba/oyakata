@@ -180,7 +180,7 @@ export function filterByIngredients(recipes: Recipe[], wanted: string[]): Recipe
 }
 ```
 
-先に、既存のフィルタ UI とテストの構成を職人に調べてもらいます。"""
+先に、既存のフィルタ UI とテストの構成をサブエージェントに調べてもらいます。"""
 
 S1_SUB_A = [
     user("src/ 配下のフィルタ UI（時間フィルタ）がどこでどう使われているか、呼び出し箇所と state の持ち方をまとめて。", ts(9)),

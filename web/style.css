@@ -100,7 +100,6 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--border)
 .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-elev); color: var(--fg-muted); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
 .chip.tiny { padding: 0 6px; font-size: 10px; margin-left: 4px; }
 .chip.link { color: var(--accent); border-color: var(--accent); cursor: pointer; }
-.chip.owner { background: var(--accent-soft); color: var(--accent); border-color: transparent; font-weight: 600; }
 .status-chip { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
 .status-chip.busy { background: color-mix(in srgb, var(--busy) 18%, var(--bg-elev)); color: var(--busy); }
 .status-chip.idle { background: color-mix(in srgb, var(--idle) 18%, var(--bg-elev)); color: var(--idle); }
@@ -768,3 +767,9 @@ table.keys td:first-child { white-space: nowrap; width: 1%; }
 .lang-dialog .lang-btns { display: flex; gap: 12px; justify-content: center; padding: 10px 0 4px; }
 .lang-dialog .btn.big { font-size: 16px; padding: 12px 28px; }
 .ns-agent:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ---- worktrees ---- */
+.statusline .sl-wt { font: inherit; font-size: 11px; background: none; border: 1px dashed var(--border); border-radius: 999px; padding: 0 8px; color: var(--fg-muted); cursor: pointer; margin-left: 6px; }
+.statusline .sl-wt.on { border-style: solid; color: var(--accent); border-color: var(--accent); }
+.statusline .sl-wt:disabled { cursor: default; }
+.row-wt { color: var(--accent); }

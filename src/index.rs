@@ -232,9 +232,16 @@ pub struct State {
     /// UI / CLI language chosen by the user (`ja` | `en`), `None` until chosen.
     pub lang: Option<String>,
     pub agent_overrides: BTreeMap<String, AgentOverride>,
+    /// Sessions OYAKATA starts in a git repository get their own worktree unless asked not to.
+    pub worktree_default: bool,
+    /// Where those worktrees go (`~/.oyakata/worktrees` unless configured).
+    pub worktree_root: Option<PathBuf>,
     pub sessions: HashMap<String, SessionEntry>,
     pub live: HashMap<String, LiveInfo>,
     pub runs: HashMap<String, RunState>,
+    /// When OYAKATA's own run of a session ended (epoch ms), so the writes it made are not
+    /// mistaken for another process working on the session.
+    run_ended: HashMap<String, u64>,
     pub repo_roots: Vec<PathBuf>,
     pub ghq_root: Option<PathBuf>,
     repo_cache: HashMap<String, RepoInfo>,
@@ -253,9 +260,12 @@ impl State {
             agents: Vec::new(),
             lang: None,
             agent_overrides: BTreeMap::new(),
+            worktree_default: true,
+            worktree_root: None,
             sessions: HashMap::new(),
             live: HashMap::new(),
             runs: HashMap::new(),
+            run_ended: HashMap::new(),
             repo_roots: Vec::new(),
             ghq_root: None,
             repo_cache: HashMap::new(),
@@ -561,7 +571,9 @@ impl State {
                 );
             }
             _ => {
-                self.runs.remove(id);
+                if self.runs.remove(id).is_some() {
+                    self.run_ended.insert(id.to_string(), now_ms());
+                }
             }
         }
     }
@@ -701,6 +713,8 @@ impl State {
                 name: e.project_dir.clone(),
                 root: None,
                 subdir: None,
+                worktree: None,
+                branch: None,
             });
         let (owner, status, waiting_for) = match (run, &live) {
             (Some(r), _) => (Some("oyakata".to_string()), r.status.clone(), r.waiting_for.clone()),
@@ -760,7 +774,13 @@ impl State {
 
     /// Another agent's session whose file changed moments ago: running in its own terminal.
     fn external_busy(&self, e: &SessionEntry) -> bool {
-        e.agent != AgentKind::Claude && !self.runs.contains_key(&e.id) && !self.live.contains_key(&e.id) && now_ms().saturating_sub(e.mtime_ms) < EXTERNAL_BUSY_MS
+        // Writes from OYAKATA's own run (up to its last flush after exit) don't count.
+        let ours = self.run_ended.get(&e.id).map(|&t| e.mtime_ms <= t + 3_000).unwrap_or(false);
+        e.agent != AgentKind::Claude
+            && !ours
+            && !self.runs.contains_key(&e.id)
+            && !self.live.contains_key(&e.id)
+            && now_ms().saturating_sub(e.mtime_ms) < EXTERNAL_BUSY_MS
     }
 
     /// All sessions, most recently active first. Sessions OYAKATA is running but that have
@@ -971,6 +991,13 @@ impl State {
             .collect();
         self.lang = v.get("lang").and_then(Value::as_str).filter(|l| matches!(*l, "ja" | "en")).map(str::to_string);
         self.agent_overrides = v.get("agents").cloned().and_then(|a| serde_json::from_value(a).ok()).unwrap_or_default();
+        self.worktree_default = v.get("worktree").and_then(Value::as_bool).unwrap_or(true);
+        self.worktree_root = v.get("worktree_root").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).map(PathBuf::from);
+    }
+
+    /// Folder that holds the worktrees OYAKATA creates.
+    pub fn worktrees_dir(&self) -> PathBuf {
+        self.worktree_root.clone().unwrap_or_else(|| self.oyakata_dir.join("worktrees"))
     }
 
     pub fn save_config(&self) -> Result<()> {
@@ -987,6 +1014,7 @@ impl State {
             }
         }
         v["agents"] = serde_json::to_value(&self.agent_overrides)?;
+        v["worktree"] = Value::Bool(self.worktree_default);
         fs::create_dir_all(&self.oyakata_dir)?;
         fs::write(self.config_path(), serde_json::to_vec_pretty(&v)?)?;
         Ok(())

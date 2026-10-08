@@ -723,6 +723,100 @@ pub fn clone_dest(root: &Path, url: &str, ghq: bool) -> Option<PathBuf> {
     Some(p)
 }
 
+// ---- worktrees ------------------------------------------------------------------------------
+
+/// The checkout root containing `path` (`git rev-parse --show-toplevel`), or `None` outside a
+/// repository.
+pub fn toplevel(path: &Path) -> Option<PathBuf> {
+    let o = run(path, &["rev-parse", "--show-toplevel"]).ok()?;
+    if !o.ok() {
+        return None;
+    }
+    let s = o.stdout.trim();
+    (!s.is_empty()).then(|| PathBuf::from(s))
+}
+
+/// `git worktree add -b <branch> <dest> HEAD` from `repo`: a new branch at the current commit,
+/// checked out in `dest`.
+pub fn add_worktree(repo: &Path, dest: &Path, branch: &str) -> Result<()> {
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    let d = dest.to_string_lossy();
+    let o = run(repo, &["worktree", "add", "-b", branch, &d, "HEAD"])?;
+    if !o.ok() {
+        bail!("git worktree add: {}", o.combined());
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct Worktree {
+    pub path: String,
+    pub branch: Option<String>,
+    /// The main checkout (first entry of `git worktree list`).
+    pub main: bool,
+}
+
+/// `git worktree list --porcelain`.
+pub fn worktrees(repo: &Path) -> Result<Vec<Worktree>> {
+    let out = run_ok(repo, &["worktree", "list", "--porcelain"])?;
+    let mut list: Vec<Worktree> = Vec::new();
+    for block in out.split("\n\n") {
+        let mut path = None;
+        let mut branch = None;
+        for line in block.lines() {
+            if let Some(p) = line.strip_prefix("worktree ") {
+                path = Some(p.trim().to_string());
+            } else if let Some(b) = line.strip_prefix("branch refs/heads/") {
+                branch = Some(b.trim().to_string());
+            }
+        }
+        if let Some(path) = path {
+            let main = list.is_empty();
+            list.push(Worktree { path, branch, main });
+        }
+    }
+    Ok(list)
+}
+
+/// What `remove_worktree` did with the branch.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct WorktreeRemoval {
+    pub branch: Option<String>,
+    /// The branch was merged (or empty) and `git branch -d` removed it.
+    pub branch_deleted: bool,
+}
+
+/// Remove a linked worktree of `repo` (never the main checkout), then delete its branch if
+/// git considers it merged (`git branch -d`); an unmerged branch is kept.
+pub fn remove_worktree(repo: &Path, path: &Path, force: bool) -> Result<WorktreeRemoval> {
+    let want = crate::repo::normalize(path);
+    let list = worktrees(repo)?;
+    let wt = list
+        .iter()
+        .find(|w| crate::repo::normalize(Path::new(&w.path)) == want)
+        .ok_or_else(|| anyhow::anyhow!("{} is not a worktree of {}", path.display(), repo.display()))?;
+    if wt.main {
+        bail!("the main checkout cannot be removed");
+    }
+    let p = wt.path.clone();
+    let mut args = vec!["worktree", "remove"];
+    if force {
+        args.push("--force");
+    }
+    args.push(&p);
+    let o = run(repo, &args)?;
+    if !o.ok() {
+        bail!("git worktree remove: {}", o.combined());
+    }
+    let mut branch_deleted = false;
+    if let Some(b) = &wt.branch {
+        branch_deleted = run(repo, &["branch", "-d", b]).map(|o| o.ok()).unwrap_or(false);
+    }
+    Ok(WorktreeRemoval { branch: wt.branch.clone(), branch_deleted })
+}
+
 // ---- discovery -----------------------------------------------------------------------------
 
 /// ghq's root (`git config ghq.root`), falling back to `~/ghq` when it exists.

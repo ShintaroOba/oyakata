@@ -80,7 +80,7 @@ enum Cmd {
     Status,
     /// Stop the running daemon
     Stop,
-    /// Install the /oyakata skill for every agent found (~/.claude/skills, ~/.codex/skills, ~/.agents/skills)
+    /// Install the /oyakata skill for Claude Code (~/.claude/skills) and the other agents (~/.agents/skills)
     Install {
         /// Install into this one directory instead
         #[arg(long)]
@@ -109,6 +109,9 @@ enum Cmd {
         /// Print the session id and return instead of attaching
         #[arg(long)]
         no_attach: bool,
+        /// Work in the folder itself instead of a new git worktree
+        #[arg(long)]
+        no_worktree: bool,
         /// The first prompt
         #[arg(trailing_var_arg = true, required = true)]
         prompt: Vec<String>,
@@ -182,10 +185,10 @@ fn main() -> Result<()> {
             Ok(())
         }
         Some(Cmd::Install { skills_dir, force }) => install(&claude_dir, skills_dir, force),
-        Some(Cmd::New { cwd, agent, model, mode, effort, no_attach, prompt }) => {
+        Some(Cmd::New { cwd, agent, model, mode, effort, no_attach, no_worktree, prompt }) => {
             let c = ensure_daemon(&cli.common, &oyakata_dir)?;
             let cwd = cwd.map(|p| p.display().to_string()).unwrap_or_else(client::current_dir_string);
-            let args = client::StartArgs { cwd, prompt: prompt.join(" "), resume: None, agent, model, mode, effort };
+            let args = client::StartArgs { cwd, prompt: prompt.join(" "), resume: None, agent, worktree: no_worktree.then_some(false), model, mode, effort };
             let id = client::start(&c, &args)?;
             println!("session {id}\n{}", page_url(&cli.common, Some(&id)));
             if no_attach {
@@ -195,7 +198,7 @@ fn main() -> Result<()> {
         }
         Some(Cmd::Attach { id, resume, model, mode, effort }) => {
             let c = ensure_daemon(&cli.common, &oyakata_dir)?;
-            let defaults = client::StartArgs { cwd: client::current_dir_string(), prompt: String::new(), resume: None, agent: None, model, mode, effort };
+            let defaults = client::StartArgs { cwd: client::current_dir_string(), prompt: String::new(), resume: None, agent: None, worktree: None, model, mode, effort };
             client::attach(&c, &id, resume, &defaults)
         }
         Some(Cmd::Sessions) => {
@@ -431,22 +434,18 @@ fn spawn_daemon(c: &Common, oyakata_dir: &Path) -> Result<()> {
     }
 }
 
-/// Write SKILL.md where each agent looks for skills: Claude Code's `~/.claude/skills`,
-/// Codex's `$CODEX_HOME/skills` when Codex is installed, and the shared `~/.agents/skills`
-/// that Gemini CLI, Copilot CLI and OpenCode read.
+/// Write SKILL.md where each agent looks for skills: Claude Code's `~/.claude/skills` and the
+/// shared `~/.agents/skills` that Codex CLI, Gemini CLI, Copilot CLI and OpenCode read.
 fn install(claude_dir: &Path, skills_dir: Option<PathBuf>, force: bool) -> Result<()> {
     use i18n::tr;
     let home = paths::home_dir();
     let targets: Vec<(String, PathBuf)> = match skills_dir {
         Some(d) => vec![(String::new(), d)],
         None => {
-            let mut v = vec![("Claude Code".to_string(), claude_dir.join("skills").join("oyakata"))];
-            let codex = agents::AgentKind::Codex.default_data_dir(&home);
-            if codex.is_dir() {
-                v.push(("Codex CLI".into(), codex.join("skills").join("oyakata")));
-            }
-            v.push(("Gemini CLI / Copilot CLI / OpenCode".into(), home.join(".agents").join("skills").join("oyakata")));
-            v
+            vec![
+                ("Claude Code".to_string(), claude_dir.join("skills").join("oyakata")),
+                ("Codex CLI / Gemini CLI / Copilot CLI / OpenCode".to_string(), home.join(".agents").join("skills").join("oyakata")),
+            ]
         }
     };
     for (label, dir) in targets {

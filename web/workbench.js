@@ -244,7 +244,7 @@
         empty.className = 'pane-empty';
         const repo = OY.state.repos.find((r) => OY.norm(r.root) === wsKey);
         const where = wsKey && wsKey !== '_' ? `<div class="pe-ws">📁 ${esc(repo?.name || OY.basename(OY.state.activeRepo || wsKey))} ${t("で開いているタブはありません")}</div>` : '';
-        empty.innerHTML = `<img class="brand-mark big" src="/assets/icon.svg" alt=""><div class="pe-greet">${esc(OY.greeting())}</div>${where}<div>${t("左の一覧からセッションを開くか、")}<button type="button" class="link-btn pe-new">${t("新しいセッション")}</button>${t("を始めてください。")}</div><div class="hint"><kbd>Ctrl</kbd>+<kbd>P</kbd> ${t("ファイル &nbsp;")} <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> ${t("全文検索 &nbsp;")} <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> ${t("コマンド")}</div>`;
+        empty.innerHTML = `<img class="brand-mark big" src="/assets/icon.svg" alt=""><div class="pe-greet">${t("何をしましょう？")}</div>${where}<div>${t("左の一覧からセッションを開くか、")}<button type="button" class="link-btn pe-new">${t("新しいセッション")}</button>${t("を始めてください。")}</div><div class="hint"><kbd>Ctrl</kbd>+<kbd>P</kbd> ${t("ファイル &nbsp;")} <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> ${t("全文検索 &nbsp;")} <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> ${t("コマンド")}</div>`;
         $('.pe-new', empty).addEventListener('click', () => OY.newSessionDialog(OY.state.activeRepo));
         body.appendChild(empty);
       }

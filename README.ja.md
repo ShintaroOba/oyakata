@@ -35,8 +35,6 @@ OYAKATA は、これをブラウザの画面 1 枚で解決します。各エー
 | **指示する** | ブラウザの入力欄から指示を送る。Claude Code なら権限の確認や質問への回答もその場でできる |
 | **仕上げる** | エージェントが変えたファイルを隣のエディタで開き、差分を確かめ、commit / push まで済ませる |
 
-> 名前の由来: 親方（あなた）が、棟梁（メインのエージェント）と職人（サブエージェント）の仕事ぶりを見て指図する、という見立てです。
-
 ## 対応エージェント
 
 | エージェント | セッションの読み取り | ブラウザからの起動・指示 |
@@ -60,9 +58,11 @@ OYAKATA は、これをブラウザの画面 1 枚で解決します。各エー
 
 ## Skill で使い始める
 
-Claude Code のプラグインとして `/oyakata` スキルを入れるだけで使えます。Rust のビルドは要りません。
+OYAKATA はエージェントのスキルとして使えます。スキルを入れて「oyakata を開いて」と頼めば、あとはエージェントが準備します。Rust のビルドは要りません。
 
-**1. プラグインを入れる**（Claude Code の中で）
+**1. スキルを入れる**
+
+Claude Code ではプラグインとして入れます。
 
 ```
 /plugin marketplace add ShintaroOba/oyakata
@@ -71,17 +71,19 @@ Claude Code のプラグインとして `/oyakata` スキルを入れるだけ�
 
 ターミナルからなら `claude plugin marketplace add ShintaroOba/oyakata` → `claude plugin install oyakata@oyakata` です。
 
-**2. `/oyakata` と打つ**
+Codex CLI・Gemini CLI・Copilot CLI・OpenCode では、[本体を入れて](#本体を入れる)から一度 `oyakata install` を実行します。これらのエージェントが読む共通のスキル置き場 `~/.agents/skills` に同じ SKILL.md が置かれます（Claude Code 用の `~/.claude/skills` にも置きます）。
+
+**2. 呼び出す**
 
 ```
 /oyakata
 ```
 
-初めて呼んだときは本体（`oyakata` コマンド）がまだ無いので、Claude がスキル同梱のスクリプトで [GitHub Releases](https://github.com/ShintaroOba/oyakata/releases) からビルド済みバイナリを入れます（Windows / macOS / Linux）。そのあと常駐プロセスを立ち上げ、ブラウザが今のセッションを開いた状態で起動します。初回はブラウザで表示言語（日本語 / English）を選びます。
+Claude Code なら `/oyakata` と打ちます。どのエージェントでも、「oyakata を開いて」「ブラウザで見たい」「他のエージェントは何してる？」のような言葉でスキルが呼び出されます。
 
-以降、そのセッションの Claude は「ブラウザで読まれている」ことを前提に、比較は表で、図は描画できる形（Mermaid）で書くようになります。`/oyakata` と打たなくても、「ブラウザで見たい」「他のリポジトリの Claude は何してる？」のような言葉でもスキルは呼び出されます。
+本体（`oyakata` コマンド）がまだ無いときは、エージェントがインストールスクリプトで [GitHub Releases](https://github.com/ShintaroOba/oyakata/releases) からビルド済みバイナリを入れます（Windows / macOS / Linux）。そのあと常駐プロセスを立ち上げ、ブラウザを開きます。初回はブラウザで表示言語（日本語 / English）を選びます。
 
-**Codex CLI・Gemini CLI・Copilot CLI・OpenCode から使うには**、本体を入れたあとに一度 `oyakata install` を実行します。各エージェントがスキルを探す場所（`~/.codex/skills`、共通の `~/.agents/skills`）に同じ SKILL.md が置かれるので、「oyakata を開いて」と頼めば同じように開きます。
+以降、そのセッションのエージェントは「ブラウザで読まれている」ことを前提に、比較は表で、図は描画できる形（Mermaid）で書くようになります。
 
 ## 画面の見かた
 
@@ -89,7 +91,7 @@ Claude Code のプラグインとして `/oyakata` スキルを入れるだけ�
 
 ![セッション一覧と会話（ダークテーマ）](docs/images/hero-dark.png)
 
-- **左のサイドバー**には、動いているセッションが上に、その下にリポジトリごとの履歴が並びます。点の色が状態です（橙: 作業中、緑: 待機中、紫: 判断待ち）。Claude Code 以外のセッションには「Codex CLI」のようにエージェント名が付きます。サイドバーの下にも「作業中 1 · 判断待ち 1」のように件数が出ます。
+- **左のサイドバー**には、動いているセッションが上に、その下にリポジトリごとの履歴が並びます。点の色が状態です（橙: 作業中、緑: 待機中、紫: 判断待ち）。Claude Code 以外のセッションには「Codex CLI」のようにエージェント名が付き、worktree で作業しているセッションには ⎇ とブランチ名が付きます。サイドバーの下にも「作業中 1 · 判断待ち 1」のように件数が出ます。
 - **セッションをクリック**すると会話が開きます。ツール呼び出しなどの作業ログは隠れていて、今何をしているかは入力欄の上の 1 行（`Bash: Run the filter tests … esc で中断`）で分かります。設定で作業ログを表示することもできます。
 - **入力欄の下**はターミナルと同じステータス行です。左が権限モード（Shift+Tab で切替）、右がモデル・努力レベル・コンテキスト使用率。Claude Code 以外では、変更は次のターンから効きます。
 
@@ -99,13 +101,15 @@ Claude Code のプラグインとして `/oyakata` スキルを入れるだけ�
 
 ヘッダーの「＋」でエージェントとフォルダを選ぶだけです。空のチャットが開き、最初の指示を送った時点でエージェントが起動します。権限モードは auto から始まります。
 
+Git リポジトリでは、新しいセッションは既定で専用の worktree で作業します。OYAKATA が今のコミットから `oyakata/<名前>` ブランチを作って `~/.oyakata/worktrees/<リポジトリ>/<名前>` に取り出し、そこでエージェントを起動します。同じリポジトリで複数のセッションを並べても、お互いのファイルや手元のチェックアウトを書き換えません。一覧では元のリポジトリの下に並び、ファイルツリー・差分・Git ビューは worktree の中身を表示します。フォルダでそのまま作業したいときは、最初の指示を送る前にステータス行の「⎇」ボタンで切り替えるか、設定ですべてのセッションについてオフにします。作業が終わったらセッションを終了し、チャットの「⋯」メニューから「worktree を削除」を選びます。フォルダが消え、ブランチもマージ済みなら一緒に消えます。
+
 Claude Code なら作業中でも指示を送れます。送った指示は次のツール呼び出しの区切りで Claude に渡り、それまでは入力欄の上に「次の区切りで渡します」と並びます。権限の確認、`AskUserQuestion` への回答、計画の承認もチャットの中のカードで答えられます。承認には朱色の「承認」、差し戻しには藍色の「差戻」の判子が押されます。他のエージェントでは、作業中に送った指示は今のターンが終わってから次のターンとして渡ります。
 
 ### 体制図（サブエージェントの様子）
 
 ![体制図](docs/images/team.png)
 
-チャット右上の「👥」を押すと、メインのエージェント（棟梁）とサブエージェント（職人）の構成が見えます。誰がどの仕事を担当し、今どのツールを実行していて、終わったときに何を報告したか。並行で振られた仕事は「陣」にまとまり、ライブで更新されます。
+チャット右上の「👥」を押すと、メインのエージェントとサブエージェントの構成が見えます。誰がどの仕事を担当し、今どのツールを実行していて、終わったときに何を報告したか。同時に振られた仕事は 1 つのグループにまとまり、表示はライブで更新されます。
 
 ### ファイル・差分・Git
 
@@ -118,7 +122,8 @@ Claude Code なら作業中でも指示を送れます。送った指示は次�
 - `Ctrl+P` でファイル名のあいまい検索、`Ctrl+Shift+F` でリポジトリの全文検索とすべての会話の横断検索
 - エディタで `F12` / `Ctrl+クリック` で定義へ、`Shift+F12` で参照一覧（言語サーバー不要）
 - 会話の中の `src/main.rs:42` のようなファイル参照をクリックすると、その行がエディタで開く
-- 作業が終わると拍子木が「カン、カン」と鳴る。待機や判断待ちになったらデスクトップ通知（任意）
+- Markdown ファイルは「プレビュー」で描画、「テキスト」で編集に切り替えられる
+- 作業が終わると音で知らせる。待機や判断待ちになったらデスクトップ通知（任意）
 - テーマはライト / ダーク / セピア / Solarized / Nord / Dracula / 高コントラスト。アクセント色、文字サイズ、本文の幅も変えられる
 - 要らないセッションは一覧から削除。記録はゴミ箱（`~/.oyakata/trash`）に移り、30 日で消える（OpenCode はデータベースなので、その場で消える）
 
@@ -172,7 +177,7 @@ oyakata install             # /oyakata スキルを各エージェントのス�
 | --- | --- |
 | `oyakata --no-open` | ブラウザを開かずに常駐だけ起動 |
 | `oyakata serve` | フォアグラウンドで実行（ログを見たいとき） |
-| `oyakata new "最初の指示"` | このフォルダで OYAKATA が持つセッションを始め、この端末を接続する。`--agent codex` のようにエージェントを選べる。`--cwd <dir>`、`--model`、`--mode`、`--effort`、`--no-attach` も指定できる |
+| `oyakata new "最初の指示"` | このフォルダで OYAKATA が持つセッションを始め、この端末を接続する。Git リポジトリなら新しい worktree で動く（`--no-worktree` でフォルダのまま）。`--agent codex` のようにエージェントを選べる。`--cwd <dir>`、`--model`、`--mode`、`--effort`、`--no-attach` も指定できる |
 | `oyakata attach <session-id>` | OYAKATA が持つセッションにこの端末を接続する（`/quit` で端末だけ離脱、`/stop` でセッション終了） |
 | `oyakata attach --resume <session-id>` | 終了済みのセッションを OYAKATA で再開する |
 | `oyakata sessions` | OYAKATA が今持っているセッションの一覧 |
@@ -215,7 +220,7 @@ oyakata attach <session-id>                     # 別の端末からも同じ会
 
 **エージェントの設定を変える必要は？**
 
-ありません。任意で、Claude Code のすべてのセッションに図を Mermaid で描かせたいときは `~/.claude/CLAUDE.md` に次の 1 行を足してください。
+ありません。任意で、すべてのセッションに図を Mermaid で描かせたいときは、エージェント全体の指示ファイル（Claude Code なら `~/.claude/CLAUDE.md`、Codex CLI なら `~/.codex/AGENTS.md`、Gemini CLI なら `~/.gemini/GEMINI.md`）に次の 1 行を足してください。
 
 ```
 図は ```mermaid フェンスで書く（OYAKATA がブラウザで描画する）。ASCIIアートで図を描かない。
@@ -262,6 +267,7 @@ VS Code に合わせています。設定の「ショートカット一覧」で
 - **コンテキスト使用率。** 直近の応答のトークン数（input + cache + output）をモデルのコンテキスト長で割った値です。OYAKATA が起動した Claude Code セッションは Claude Code の報告値、それ以外はモデル名から推定します。
 - **体制図。** `<session>/subagents/agent-*.jsonl` と `*.meta.json` を読み、呼び出し元の Agent ツール呼び出しと突き合わせます（Claude Code）。
 - **ブラウザから起動するセッション。** Claude Code は `claude -p --input-format stream-json --output-format stream-json --permission-prompt-tool stdio` の子プロセスで、指示は stdin に書き、権限の確認は stdout から受け取ります。他のエージェントは指示ごとに `codex exec` / `gemini` / `copilot` / `opencode run` を起動し、指示は stdin で渡し、JSON のイベント列で状態を追い、次の指示は同じセッションの再開として起動します。会話は各エージェント自身が書き出すので、表示は他のセッションと同じ経路です。
+- **worktree。** 新しいセッションは、起動したリポジトリで `git worktree add -b oyakata/<名前> <フォルダ> HEAD` を実行します。名前は英語の指示なら先頭の単語から、それ以外は時刻から作ります。worktree の `.git` ファイルが元のリポジトリを指しているので、セッションは元のリポジトリの下に並びます。「worktree を削除」は `git worktree remove` のあと `git branch -d` を実行するので、マージしていないブランチは残ります。
 - **ターミナルへの打ち込み（Windows）**は、そのコンソールの入力バッファへキー入力を書き込みます（`AttachConsole` + `WriteConsoleInputW`）。打ち込む前にプロセスの起動時刻を照合し、pid が別のプロセスに再利用されていたら打ちません。
 - **Git 操作**は `git` コマンドをそのまま呼びます。commit は選択したファイル、push は上流が無ければ `-u origin HEAD`、pull は `--ff-only`。ブランチ切替は意図的に入れていません。
 - **定義へのジャンプと検索**は `git grep` です。言語サーバーは使いません。
@@ -296,21 +302,21 @@ src/
   i18n.rs        ターミナル側の表示言語
   console.rs     ターミナルで稼働中のセッションへの打鍵（Windows コンソール入力）
   client.rs      ターミナル側フロント（new / attach / sessions）
-  gitops.rs      git status / tree / diff / log / grep / commit / push / pull / clone
+  gitops.rs      git status / tree / diff / log / grep / commit / push / pull / clone / worktree
   live.rs        稼働中セッション（pid 生存確認）
   paths.rs       PATH の補完、実行ファイルと ~/.oyakata の場所
-  repo.rs        cwd → リポジトリ名
+  repo.rs        cwd → リポジトリ名（worktree は元のリポジトリに対応づける）
 web/
   index.html / style.css / icon.svg
   i18n.js / i18n-en.js  表示言語の切替と英語辞書（docs/i18n から生成）
   app.js         共通: API・テーマ・Markdown・トランスクリプト描画・イベントバス・設定・言語選択
   workbench.js   ペインの分割ツリー、タブ、ドラッグ＆ドロップ、リポジトリごとの配置
   chat.js        チャットペイン（会話・入力欄とステータス行・許可/質問/計画カード・進行表示）
-  team.js        体制図（棟梁とサブエージェントの構成・状態）
+  team.js        体制図（メインのエージェントとサブエージェントの構成・状態）
   code.js        定義 / 参照へのジャンプ、戻る / 進む、会話中のファイル参照
   palette.js     Ctrl+P / コマンドパレット / 候補の選択
   search.js      全文検索ビュー（ファイル / 会話）
-  fx.js          判子と拍子木
+  fx.js          承認の判子と完了の音
   editors.js     CodeMirror エディタ、差分・コミット・URL・サブエージェントのビュー
   sidebar.js     セッション一覧 / ツリー / Git（commit・push・pull）、削除、リポジトリ追加
   vendor/        同梱ライブラリ（marked, DOMPurify, highlight.js, Mermaid, CodeMirror 5）

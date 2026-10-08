@@ -192,12 +192,12 @@
     return rankBy(avail.map((c) => ({ icon: c.icon || '›', label: c.label, right: c.keys || '', run: c.run })), q, (it) => it.label, 100);
   }
   function lineItems(q) {
-    const t = OY.wb.activeTab();
-    if (t?.desc?.kind !== 'file' || !t.inst?.reveal) return [];
+    const tab = OY.wb.activeTab();
+    if (tab?.desc?.kind !== 'file' || !tab.inst?.reveal) return [];
     const n = parseInt(q, 10);
-    const total = t.inst.lineCount?.() || 0;
+    const total = tab.inst.lineCount?.() || 0;
     if (!n) return [{ icon: '↧', label: `${t("行番号を入力（1〜")}${total}）`, run: () => {}, keep: true }];
-    return [{ icon: '↧', label: `${n} ${t("行目へ移動")}`, detail: t.desc.title, run: () => { const loc = OY.code.here(); if (loc) OY.code.jump({ ...loc, line: Math.min(n, total || n), col: 1 }); } }];
+    return [{ icon: '↧', label: `${n} ${t("行目へ移動")}`, detail: tab.desc.title, run: () => { const loc = OY.code.here(); if (loc) OY.code.jump({ ...loc, line: Math.min(n, total || n), col: 1 }); } }];
   }
   function sessionItems(q) {
     const list2 = state.sessions.filter((s) => s.user_turns > 0 || s.status !== 'ended').map((s) => ({

@@ -1,5 +1,5 @@
 /* OYAKATA small pleasures: the seal stamped on a card when you approve it (判子) and the
-   wooden clappers (拍子木) that sound when Claude finishes a turn. The sound is synthesized
+   wooden clappers (拍子木) that sound when an agent finishes a turn. The sound is synthesized
    with Web Audio, so nothing is downloaded. Both can be turned off in the settings. */
 (() => {
   'use strict';
@@ -10,8 +10,8 @@
 
   // ------------------------------------------------------------------ 判子
   const STAMPS = {
-    approve: { top: t('親方'), main: t('承認'), cls: 'shu' },
-    answer: { top: t('親方'), main: t('回答'), cls: 'shu' },
+    approve: { top: '', main: t('承認'), cls: 'shu' },
+    answer: { top: '', main: t('回答'), cls: 'shu' },
     deny: { top: '', main: t('差戻'), cls: 'ai square' },
   };
   /// Press a seal over `el` (or at its centre if `el` is about to disappear).

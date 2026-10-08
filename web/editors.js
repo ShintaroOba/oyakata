@@ -49,8 +49,8 @@
       if (!file) return;
       const btns = [];
       if (!file.binary) {
-        if (mode !== 'edit') btns.push(t('<button type="button" class="btn small act" data-act="edit">編集</button>'));
-        if (isMd && mode !== 'render') btns.push(t('<button type="button" class="btn small act" data-act="render">描画</button>'));
+        if (mode !== 'edit') btns.push(t('<button type="button" class="btn small act" data-act="edit">テキスト</button>'));
+        if (isMd && mode !== 'render') btns.push(t('<button type="button" class="btn small act" data-act="render">プレビュー</button>'));
         if (isDoc && mode !== 'preview') btns.push(t('<button type="button" class="btn small act" data-act="preview">プレビュー</button>'));
         if (mode === 'edit') btns.push(t('<button type="button" class="btn small primary act" data-act="save" title="Ctrl+S">保存</button>'));
       }

@@ -58,7 +58,6 @@
     filter: '',
     showEmpty: LS.get('showEmpty', false),
     showLogs: LS.get('showLogs2', false),
-    whimsy: LS.get('whimsy', true),
     width: LS.get('width', 'narrow'),
     notify: LS.get('notify', false),
     prevStatus: new Map(),
@@ -330,29 +329,25 @@
       const k = norm(r.root);
       if ((c === k || c.startsWith(k + '/')) && (!best || k.length > norm(best.root).length)) best = r;
     }
-    return best;
+    if (best) return best;
+    // A linked worktree lives outside its repository's folder: resolve it through a session
+    // that ran there, and answer with the worktree as the root (that is where its files are).
+    for (const s of state.sessions) {
+      const w = s.repo?.worktree;
+      if (!w) continue;
+      const k = norm(w);
+      if (c === k || c.startsWith(k + '/')) return { root: w, name: s.repo.name, worktree: w, branch: s.repo.branch };
+    }
+    return null;
   }
+  /// The checkout a session works in: its worktree when it has one, else the repository.
+  function workRoot(s) { return s?.repo?.worktree || s?.repo?.root || s?.cwd || null; }
   function uuid() {
     if (crypto.randomUUID) return crypto.randomUUID();
     const b = crypto.getRandomValues(new Uint8Array(16));
     b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
     const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
     return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-  }
-
-  // ------------------------------------------------------- oyakata words
-  /// Words the activity line cycles through while Claude works, like the terminal's
-  /// whimsical spinner verbs, in a carpenter's workshop vocabulary.
-  const CRAFT = [t('段取り中'), t('墨付け中'), t('鉋がけ中'), t('刻み中'), t('寸法取り中'), t('図面を確認中'), t('下ごしらえ中'), t('組み上げ中'), t('釘打ち中'), t('仕上げ中'), t('木取り中'), t('鑿を研ぎ中')];
-  const DONE_WORDS = [t('一丁上がり'), t('お待ちどおさま'), t('できました'), t('仕上がりました')];
-  function craftVerb(seed) { return state.whimsy ? CRAFT[Math.abs(seed | 0) % CRAFT.length] : t('作業中'); }
-  function doneWord(seed) { return state.whimsy ? DONE_WORDS[Math.abs(seed | 0) % DONE_WORDS.length] : t('完了'); }
-  function greeting() {
-    const h = new Date().getHours();
-    if (!state.whimsy) return t('何をしましょう？');
-    if (h >= 5 && h < 11) return t('おはようございます、親方。今日は何から始めましょう？');
-    if (h >= 11 && h < 18) return t('お疲れさまです、親方。次の仕事は何にしましょう？');
-    return t('遅くまでお疲れさまです、親方。何を片付けましょう？');
   }
 
   // ------------------------------------------------------------------ modal
@@ -596,35 +591,35 @@
       if (d.classList?.contains('tool') && d.open && $('.tool-body', d)?.dataset.filled === '0') fill(d);
     }, true);
     root.addEventListener('click', (e) => {
-      const t = e.target;
-      if (t.closest('.copy-btn')) {
-        const code = $('code', t.closest('.code-block'));
+      const tg = e.target;
+      if (tg.closest('.copy-btn')) {
+        const code = $('code', tg.closest('.code-block'));
         if (code) copyText(code.textContent);
-      } else if (t.closest('.code-more')) {
-        const cb = t.closest('.code-block');
+      } else if (tg.closest('.code-more')) {
+        const cb = tg.closest('.code-block');
         const folded = cb.classList.toggle('folded');
-        t.closest('.code-more').textContent = folded ? `${t("全体を表示（")}${$('code', cb).textContent.split('\n').length} ${t("行）")}` : t('折り畳む');
+        tg.closest('.code-more').textContent = folded ? `${t("全体を表示（")}${$('code', cb).textContent.split('\n').length} ${t("行）")}` : t('折り畳む');
         if (folded) cb.scrollIntoView({ block: 'nearest' });
-      } else if (t.closest('code.path-ref')) {
-        OY.code.openRef(t.closest('code.path-ref').textContent, ctx.cwd());
-      } else if (t.closest('.toc a')) {
+      } else if (tg.closest('code.path-ref')) {
+        OY.code.openRef(tg.closest('code.path-ref').textContent, ctx.cwd());
+      } else if (tg.closest('.toc a')) {
         e.preventDefault();
-        const a = t.closest('.toc a');
+        const a = tg.closest('.toc a');
         const h = $(`.sec-head[data-sec="${a.dataset.sec}"]`, a.closest('.body'));
         if (h) { h.classList.remove('folded'); h.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
-      } else if (t.closest('.sec-head') && !t.closest('a')) {
-        t.closest('.sec-head').classList.toggle('folded');
-      } else if (t.closest('.copy-md')) {
-        const it = ctx.items()[+t.closest('.copy-md').dataset.idx];
+      } else if (tg.closest('.sec-head') && !tg.closest('a')) {
+        tg.closest('.sec-head').classList.toggle('folded');
+      } else if (tg.closest('.copy-md')) {
+        const it = ctx.items()[+tg.closest('.copy-md').dataset.idx];
         if (it?.md) copyText(it.md);
-      } else if (t.closest('.show-all')) {
-        fill(t.closest('details.tool'), true);
-      } else if (t.closest('.open-agent')) {
-        OY.editors.openAgent(ctx.sessionId(), t.closest('.open-agent').dataset.agent);
-      } else if (t.closest('[data-open-file]')) {
-        OY.editors.openFile(t.closest('[data-open-file]').dataset.openFile);
-      } else if (t.closest('a.oy-link')) {
-        const a = t.closest('a.oy-link');
+      } else if (tg.closest('.show-all')) {
+        fill(tg.closest('details.tool'), true);
+      } else if (tg.closest('.open-agent')) {
+        OY.editors.openAgent(ctx.sessionId(), tg.closest('.open-agent').dataset.agent);
+      } else if (tg.closest('[data-open-file]')) {
+        OY.editors.openFile(tg.closest('[data-open-file]').dataset.openFile);
+      } else if (tg.closest('a.oy-link')) {
+        const a = tg.closest('a.oy-link');
         if (/^https?:/i.test(a.href)) { e.preventDefault(); OY.editors.openUrl(a.href); }
       }
     });
@@ -640,7 +635,7 @@
       const was = prev.get(s.id);
       if (was && was !== s.status) {
         if (s.status === 'idle' && was === 'busy') {
-          notifyEvent(s, `${sessionTitle(s)} — ${doneWord(s.user_turns)}`, (s.last_text_snippet || '').slice(0, 160));
+          notifyEvent(s, `${sessionTitle(s)} — ${t('完了')}`, (s.last_text_snippet || '').slice(0, 160));
           OY.fx?.hyoshigi();
         }
         if (s.status === 'waiting') notifyEvent(s, `${sessionTitle(s)} ${t("が")}${s.waiting_for?.startsWith('question') ? t('質問') : t('判断')}${t("を待っています")}`, s.waiting_for || '');
@@ -723,7 +718,7 @@
     bus.emit('active-repo', root);
   }
   function followSession(s) {
-    const root = s?.repo?.root || s?.cwd;
+    const root = workRoot(s);
     if (root) setActiveRepo(root);
   }
   async function deleteSession(id) {
@@ -817,7 +812,7 @@
         <div class="ns-search"><input type="search" id="ns-q" placeholder="${t("リポジトリを絞り込む、またはフォルダのパスを入力")}" autocomplete="off" spellcheck="false"></div>
         <div class="ns-list" id="ns-list"></div>
         <details class="ns-browse"><summary>${t("📂 フォルダを参照…")}</summary><div id="ns-fb"></div></details>
-        <p class="note">${t("権限モードは")} <b>auto</b> ${t("で始まります。モデルや権限はチャット下のステータス行（Shift+Tab）でいつでも変えられます。")}</p>`,
+        <p class="note">${t("権限モードは")} <b>auto</b> ${t("で始まります。モデルや権限はチャット下のステータス行（Shift+Tab）でいつでも変えられます。")}${state.config.worktree !== false ? ` ${t("Git リポジトリでは新しい worktree を作って作業します（ステータス行の ⎇ で切替）。")}` : ''}</p>`,
       actions: [
         { label: t('キャンセル') },
         { label: t('開始'), primary: true, onClick: (card) => { const p = ($('#ns-q', card).value.trim().match(/^([a-z]:[\\/]|\/|\\\\)/i) ? $('#ns-q', card).value.trim() : selected); if (!p) throw new Error(t('フォルダを選んでください')); start(p); } },
@@ -960,11 +955,12 @@
     $('#set-width').value = state.width;
     $('#set-show-empty').checked = state.showEmpty;
     $('#set-show-logs').checked = state.showLogs;
-    $('#set-whimsy').checked = state.whimsy;
     $('#set-stamp').checked = state.fxStamp;
     $('#set-sound').checked = state.fxSound;
     const lang = $('#set-lang');
     if (lang) lang.value = OY.i18n.lang();
+    const wt = $('#set-worktree');
+    if (wt) wt.checked = state.config.worktree !== false;
     const ag = $('#set-agents');
     if (ag) {
       const list = (state.config.agents || []).filter((a) => a.installed || a.enabled);
@@ -1082,7 +1078,7 @@
     c(t('体制図を開く'), () => OY.team.open(activeChat().id), '', '👥', () => !!activeChat()?.session?.subagents);
     c(t('タブを右に分割'), () => OY.wb.splitActive('right'), 'Ctrl+\\', '◫');
     c(t('ペイン配置を初期化（このリポジトリ）'), () => OY.wb.reset(), '', '⟲');
-    c(t('拍子木を鳴らす'), () => OY.fx.hyoshigi({ force: true }), '', '🪵');
+    c(t('完了の音を鳴らす'), () => OY.fx.hyoshigi({ force: true }), '', '🔊');
     c(t('設定'), () => { $('#settings').hidden = false; }, 'Ctrl+,', '⚙');
     c(t('キーボードショートカット一覧'), () => showKeys(), '', '⌨');
   }
@@ -1130,7 +1126,6 @@
     $('#set-width').addEventListener('change', (e) => { state.width = e.target.value; LS.set('width', state.width); applyTheme(); });
     $('#set-show-empty').addEventListener('change', (e) => { state.showEmpty = e.target.checked; LS.set('showEmpty', state.showEmpty); bus.emit('sessions', state.sessions); });
     $('#set-show-logs').addEventListener('change', (e) => setShowLogs(e.target.checked));
-    $('#set-whimsy').addEventListener('change', (e) => { state.whimsy = e.target.checked; LS.set('whimsy', state.whimsy); bus.emit('whimsy'); });
     $('#set-stamp').addEventListener('change', (e) => OY.fx.setStamp(e.target.checked));
     $('#set-sound').addEventListener('change', (e) => OY.fx.setSound(e.target.checked));
     $('#set-sound-test').addEventListener('click', () => OY.fx.hyoshigi({ force: true }));
@@ -1141,6 +1136,10 @@
       try { await api.post('/api/config', { lang }); } catch (err) { toast(err.message); }
       OY.i18n.setLang(lang);
       location.reload();
+    });
+    $('#set-worktree')?.addEventListener('change', async (e) => {
+      try { state.config = await api.post('/api/config', { worktree: e.target.checked }); }
+      catch (err) { toast(err.message); e.target.checked = !e.target.checked; }
     });
     $('#set-agents')?.addEventListener('change', async (e) => {
       const cb = e.target.closest('input[data-agent]');
@@ -1211,7 +1210,7 @@
     isLog, isPrompt, TOOL_ICON, MODELS, EFFORTS, MODES, MODE_CYCLE, DEFAULT_MODE, runDefaults, saveRunDefaults, fillSelect, uuid,
     agentInfo, agentLabel, runnableAgents, defaultAgent,
     i18n: window.OY_I18N, t: window.OY_I18N.t,
-    craftVerb, doneWord, greeting, newSessionDialog, addRepoDialog, folderBrowser, setActiveRepo, followSession, repoOfCwd,
+    newSessionDialog, addRepoDialog, folderBrowser, setActiveRepo, followSession, repoOfCwd, workRoot,
     deleteSession, restoreSession, applyTheme, isDark, refreshSessions, refreshRepos, setShowLogs, init,
   };
 })();

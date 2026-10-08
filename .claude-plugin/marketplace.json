@@ -1,6 +1,6 @@
 {
   "name": "oyakata",
-  "description": "OYAKATA（親方）— Claude Code のセッションをブラウザから見渡して指示を送る司令塔",
+  "description": "OYAKATA（親方）— コーディングエージェント（Claude Code・Codex CLI・Gemini CLI・Copilot CLI・OpenCode）のセッションをブラウザで見渡し、指示を送る",
   "owner": {
     "name": "Shintaro Oba",
     "url": "https://github.com/ShintaroOba"

@@ -86,6 +86,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/run/{id}/mode", post(run_mode))
         .route("/api/run/{id}/model", post(run_model))
         .route("/api/run/{id}/stop", post(run_stop))
+        .route("/api/worktree/remove", post(worktree_remove))
         .route("/api/terminal/{id}/send", post(terminal_send))
         .route("/api/terminal/{id}/interrupt", post(terminal_interrupt))
         .route("/api/events", get(events))
@@ -339,7 +340,7 @@ async fn config(AxState(app): AxState<Shared>) -> Json<Value> {
 }
 
 fn config_json(app: &Shared) -> Value {
-    let (claude_dir, ghq_root, repo_roots, lang, oyakata_dir, agents) = {
+    let (claude_dir, ghq_root, repo_roots, lang, oyakata_dir, agents, worktree_default, worktree_root) = {
         let st = lock(app);
         (
             st.claude_dir.display().to_string(),
@@ -348,6 +349,8 @@ fn config_json(app: &Shared) -> Value {
             st.lang.clone(),
             st.oyakata_dir.display().to_string(),
             st.agents.clone(),
+            st.worktree_default,
+            st.worktrees_dir().display().to_string(),
         )
     };
     let home = crate::paths::home_dir();
@@ -385,6 +388,8 @@ fn config_json(app: &Shared) -> Value {
         "lang": lang,
         "oyakata_dir": oyakata_dir,
         "agents": agents_json,
+        "worktree": worktree_default,
+        "worktree_root": worktree_root,
     })
 }
 
@@ -395,6 +400,10 @@ async fn set_config(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> R
         let mut st = lock(&app2);
         if let Some(l) = body.get("lang") {
             st.set_lang(l.as_str().map(str::to_string))?;
+        }
+        if let Some(w) = body.get("worktree").and_then(Value::as_bool) {
+            st.worktree_default = w;
+            st.save_config()?;
         }
         if let Some(map) = body.get("agents").and_then(Value::as_object) {
             for (k, v) in map {
@@ -883,9 +892,42 @@ async fn run_start(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Re
             }
         }
     }
+    if let Some(id) = &resume {
+        let missing = lock(&app).sessions.get(id).map(|_| !std::path::Path::new(cwd).is_dir()).unwrap_or(false);
+        if missing {
+            return err(
+                StatusCode::CONFLICT,
+                if crate::i18n::is_ja() {
+                    format!("このセッションの作業フォルダ（{cwd}）がありません。worktree を削除した場合は、新しいセッションとして始めてください。")
+                } else {
+                    format!("This session's working folder ({cwd}) is gone. If its worktree was removed, start a new session instead.")
+                },
+            );
+        }
+    }
+    // A new session in a git repository works in its own worktree unless asked not to.
+    let mut cwd = PathBuf::from(cwd);
+    let mut worktree: Option<(PathBuf, String)> = None;
+    let mut note: Option<String> = None;
+    let want_worktree = resume.is_none() && body.get("worktree").and_then(Value::as_bool).unwrap_or_else(|| lock(&app).worktree_default);
+    if want_worktree {
+        let root_dir = lock(&app).worktrees_dir();
+        let src = cwd.clone();
+        let slug_src = prompt.to_string();
+        let made = tokio::task::spawn_blocking(move || create_worktree(&src, &root_dir, slug_src)).await;
+        match made {
+            Ok(Ok(Some((new_cwd, path, branch)))) => {
+                cwd = new_cwd;
+                worktree = Some((path, branch));
+            }
+            Ok(Ok(None)) => {} // not a git repository: run in the folder itself
+            Ok(Err(e)) => note = Some(format!("{}: {e:#}", tr("worktree を作れなかったため、元のフォルダで始めました", "Could not create a worktree, so the session runs in the folder itself"))),
+            Err(e) => note = Some(e.to_string()),
+        }
+    }
     let opts = StartOptions {
         agent,
-        cwd: PathBuf::from(cwd),
+        cwd: cwd.clone(),
         prompt: prompt.to_string(),
         resume,
         session_id,
@@ -894,8 +936,125 @@ async fn run_start(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Re
         effort: body_str(&body, "effort").map(str::to_string),
     };
     match app.runners.start(opts).await {
-        Ok(id) => Json(json!({ "session_id": id })).into_response(),
-        Err(e) => err(StatusCode::BAD_REQUEST, format!("{e:#}")),
+        Ok(id) => Json(json!({
+            "session_id": id,
+            "cwd": cwd.display().to_string(),
+            "worktree": worktree.as_ref().map(|(p, _)| p.display().to_string()),
+            "branch": worktree.as_ref().map(|(_, b)| b.clone()),
+            "note": note,
+        }))
+        .into_response(),
+        Err(e) => {
+            // Don't leave an unused worktree behind when the agent failed to start.
+            if let Some((path, _)) = &worktree {
+                if let Some(main) = crate::repo::detect(&path.to_string_lossy()).root {
+                    let _ = gitops::remove_worktree(std::path::Path::new(&main), path, true);
+                }
+            }
+            err(StatusCode::BAD_REQUEST, format!("{e:#}"))
+        }
+    }
+}
+
+/// Create `<worktrees>/<repo>/<name>` on a new branch `oyakata/<name>` at the repository's
+/// current commit. Returns (cwd inside the worktree, worktree root, branch), or `None` when
+/// `src` is not inside a git repository.
+fn create_worktree(src: &std::path::Path, worktrees: &std::path::Path, prompt: String) -> anyhow::Result<Option<(PathBuf, PathBuf, String)>> {
+    let Some(top) = gitops::toplevel(src) else { return Ok(None) };
+    let info = crate::repo::detect(&top.to_string_lossy());
+    // Starting from inside a worktree branches off that worktree's checkout but files the new
+    // one under the main repository's name.
+    let repo_name: String = info.name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' }).collect();
+    let name = worktree_name(&prompt);
+    let dest = worktrees.join(repo_name.trim_matches('-')).join(&name);
+    let branch = format!("oyakata/{name}");
+    gitops::add_worktree(&top, &dest, &branch)?;
+    let rel = src.strip_prefix(&top).ok().filter(|r| !r.as_os_str().is_empty());
+    let cwd = match rel {
+        Some(r) if dest.join(r).is_dir() => dest.join(r),
+        _ => dest.clone(),
+    };
+    Ok(Some((cwd, dest, branch)))
+}
+
+/// `fix-the-parser-3fa2` from an English prompt, `20261008-0412-3fa2` otherwise.
+fn worktree_name(prompt: &str) -> String {
+    let words: Vec<String> = prompt
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .take(4)
+        .map(|w| w.to_ascii_lowercase())
+        .collect();
+    let mut slug = words.join("-");
+    slug.truncate(32);
+    let slug = slug.trim_matches('-').to_string();
+    let suffix: String = uuid::Uuid::new_v4().simple().to_string().chars().take(4).collect();
+    if slug.len() >= 3 {
+        format!("{slug}-{suffix}")
+    } else {
+        let iso = crate::agents::canon::ms_to_iso(
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0),
+        );
+        // 2026-10-08T04:12:33.000Z -> 20261008-0412
+        let stamp: String = iso.chars().filter(|c| c.is_ascii_digit()).take(12).collect();
+        format!("{}-{}-{suffix}", &stamp[..8.min(stamp.len())], &stamp[8.min(stamp.len())..])
+    }
+}
+
+#[cfg(test)]
+mod worktree_tests {
+    use super::worktree_name;
+
+    #[test]
+    fn names_come_from_english_prompts_or_the_time() {
+        let n = worktree_name("Fix the parser bug, please");
+        assert!(n.starts_with("fix-the-parser-bug-") && n.len() == "fix-the-parser-bug-".len() + 4, "{n}");
+        let j = worktree_name("パーサーを直して");
+        let parts: Vec<&str> = j.split('-').collect();
+        assert_eq!(parts.len(), 3, "{j}");
+        assert_eq!(parts[0].len(), 8);
+        assert_eq!(parts[1].len(), 4);
+        assert!(parts[0].chars().chain(parts[1].chars()).all(|c| c.is_ascii_digit()));
+        assert_eq!(worktree_name("ok").split('-').count(), 3, "too short for a slug");
+    }
+}
+
+/// `{"path": "<worktree>", "force": false}`: remove a linked worktree (not while a session
+/// runs in it) and delete its branch when merged.
+async fn worktree_remove(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Response {
+    let Some(path) = body_str(&body, "path").map(PathBuf::from) else { return bad("path is required") };
+    let force = body.get("force").and_then(Value::as_bool).unwrap_or(false);
+    let busy = {
+        let st = lock(&app);
+        let key = crate::repo::normalize(&path);
+        st.summaries().iter().any(|s| {
+            s.status != "ended"
+                && s.cwd.as_deref().map(|c| {
+                    let n = crate::repo::normalize(std::path::Path::new(c));
+                    n == key || n.starts_with(&format!("{key}/"))
+                }).unwrap_or(false)
+        })
+    };
+    if busy {
+        return err(StatusCode::CONFLICT, tr("この worktree ではセッションが動いています。終わってから削除してください。", "A session is running in this worktree. Wait for it to finish."));
+    }
+    let r = tokio::task::spawn_blocking(move || -> anyhow::Result<gitops::WorktreeRemoval> {
+        let main = crate::repo::detect(&path.to_string_lossy()).root.ok_or_else(|| anyhow::anyhow!("{} is not in a git repository", path.display()))?;
+        gitops::remove_worktree(std::path::Path::new(&main), &path, force)
+    })
+    .await;
+    match r {
+        Ok(Ok(v)) => {
+            push_sessions(&app);
+            Json(json!({ "ok": true, "branch": v.branch, "branch_deleted": v.branch_deleted })).into_response()
+        }
+        Ok(Err(e)) => {
+            let msg = format!("{e:#}");
+            // git refuses when there are uncommitted changes; the UI then offers --force.
+            let dirty = msg.contains("modified or untracked") || msg.contains("contains modified") || msg.contains("is dirty");
+            (StatusCode::CONFLICT, Json(json!({ "error": msg, "dirty": dirty }))).into_response()
+        }
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     }
 }
 

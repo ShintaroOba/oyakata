@@ -57,7 +57,7 @@
  "<button type=\"button\" class=\"btn small act\" data-act=\"dock\">別ウィンドウ</button>": [
   "editors.js"
  ],
- "<button type=\"button\" class=\"btn small act\" data-act=\"edit\">編集</button>": [
+ "<button type=\"button\" class=\"btn small act\" data-act=\"edit\">テキスト</button>": [
   "editors.js"
  ],
  "<button type=\"button\" class=\"btn small act\" data-act=\"open\">ファイルを開く</button>": [
@@ -72,7 +72,7 @@
  "<button type=\"button\" class=\"btn small act\" data-act=\"reload\">更新</button>": [
   "editors.js"
  ],
- "<button type=\"button\" class=\"btn small act\" data-act=\"render\">描画</button>": [
+ "<button type=\"button\" class=\"btn small act\" data-act=\"render\">プレビュー</button>": [
   "editors.js"
  ],
  "<button type=\"button\" class=\"btn small primary act\" data-act=\"save\" title=\"Ctrl+S\">保存</button>": [
@@ -147,7 +147,7 @@
  "<div class=\"sb-empty\">リポジトリを選んでください</div>": [
   "sidebar.js"
  ],
- "<div class=\"tc-now\"><span class=\"lbl\">いま</span>親方の判断を待っています</div>": [
+ "<div class=\"tc-now\"><span class=\"lbl\">いま</span>あなたの判断を待っています</div>": [
   "team.js"
  ],
  "<div class=\"tc-now\"><span class=\"lbl\">いま</span>起動しています…</div>": [
@@ -169,9 +169,6 @@
   "sidebar.js"
  ],
  "<section class=\"sb-section\"><h3>その他</h3>": [
-  "sidebar.js"
- ],
- "<span class=\"chip tiny owner\">親方</span>": [
   "sidebar.js"
  ],
  "<span class=\"hanko-mini\">承認</span>": [
@@ -218,6 +215,9 @@
  ],
  "Git リポジトリではないため、ファイル検索は使えません": [
   "palette.js"
+ ],
+ "Git リポジトリでは新しい worktree を作って作業します（ステータス行の ⎇ で切替）。": [
+  "app.js"
  ],
  "IDE や SDK で動いているセッションには送れません（終了後に引き継げます）": [
   "chat.js"
@@ -292,11 +292,32 @@
  "push 待ち": [
   "sidebar.js"
  ],
+ "worktree とブランチを削除しました": [
+  "chat.js"
+ ],
+ "worktree を削除": [
+  "chat.js"
+ ],
+ "worktree を削除しました": [
+  "chat.js"
+ ],
+ "worktree を削除しました。ブランチは残しています:": [
+  "chat.js"
+ ],
  "· 変更": [
   "chat.js"
  ],
  "· 完了": [
   "team.js"
+ ],
+ "⎇ worktree で作業": [
+  "chat.js"
+ ],
+ "⎇ worktree なし": [
+  "chat.js"
+ ],
+ "⎇ 新しい worktree で始めます": [
+  "chat.js"
  ],
  "」の定義が見つからないため、参照を表示します": [
   "code.js"
@@ -316,15 +337,6 @@
  "いま": [
   "team.js"
  ],
- "おはようございます、親方。今日は何から始めましょう？": [
-  "app.js"
- ],
- "お待ちどおさま": [
-  "app.js"
- ],
- "お疲れさまです、親方。次の仕事は何にしましょう？": [
-  "app.js"
- ],
  "から fast-forward で取り込みます（git pull --ff-only）。": [
   "sidebar.js"
  ],
@@ -343,11 +355,20 @@
  "ここで始める": [
   "sidebar.js"
  ],
+ "この worktree のフォルダを消します。ブランチ": [
+  "chat.js"
+ ],
  "このサイトは埋め込み表示を許可していないため、右横の別ウィンドウとして開きます。": [
   "editors.js"
  ],
+ "このサブエージェントが振った仕事": [
+  "team.js"
+ ],
  "このセッションを削除": [
   "sidebar.js"
+ ],
+ "このフォルダでそのまま作業します。クリックで worktree を使う": [
+  "chat.js"
  ],
  "このフォルダで新しいセッション": [
   "sidebar.js"
@@ -366,9 +387,6 @@
  ],
  "この中で試す": [
   "editors.js"
- ],
- "この職人が振った仕事": [
-  "team.js"
  ],
  "さらに前を表示": [
   "chat.js"
@@ -403,9 +421,6 @@
  "たった今": [
   "app.js"
  ],
- "できました": [
-  "app.js"
- ],
  "で始まります。モデルや権限はチャット下のステータス行（Shift+Tab）でいつでも変えられます。": [
   "app.js"
  ],
@@ -430,13 +445,16 @@
  "の候補": [
   "code.js"
  ],
+ "は、マージ済みなら一緒に消し、そうでなければ残します。会話の記録は残ります。": [
+  "chat.js"
+ ],
  "はこのリポジトリに見つかりません": [
   "code.js"
  ],
  "へ push します。": [
   "sidebar.js"
  ],
- "まだ職人（サブエージェント）はいません。": [
+ "まだサブエージェントはいません。": [
   "team.js"
  ],
  "を": [
@@ -476,7 +494,7 @@
  "エージェント": [
   "index.html"
  ],
- "カードをクリックすると、その職人の会話を開きます。同じ頃に振られた仕事は「陣」にまとめています（並行作業）。カードにマウスを置くと依頼内容が見られます。": [
+ "カードをクリックすると、そのサブエージェントの会話を開きます。同じ頃に振られた仕事は 1 つのグループにまとめています（並行作業）。カードにマウスを置くと依頼内容が見られます。": [
   "team.js"
  ],
  "キャンセル": [
@@ -492,6 +510,9 @@
  ],
  "クリックでファイルを開く": [
   "app.js"
+ ],
+ "グループ": [
+  "team.js"
  ],
  "コピー": [
   "app.js",
@@ -544,7 +565,8 @@
  ],
  "サブエージェント": [
   "editors.js",
-  "sidebar.js"
+  "sidebar.js",
+  "team.js"
  ],
  "サブエージェントの会話を開く": [
   "app.js"
@@ -718,7 +740,7 @@
  "ポップアップがブロックされました。許可してから再度開いてください。": [
   "editors.js"
  ],
- "メインの": [
+ "メイン": [
   "team.js"
  ],
  "メニュー": [
@@ -780,9 +802,6 @@
  "ローカルコマンド": [
   "app.js"
  ],
- "一丁上がり": [
-  "app.js"
- ],
  "一致するセッションはありません": [
   "sidebar.js"
  ],
@@ -810,9 +829,6 @@
  "上流": [
   "sidebar.js"
  ],
- "下ごしらえ中": [
-  "app.js"
- ],
  "不明な種類:": [
   "workbench.js"
  ],
@@ -835,21 +851,6 @@
  "中身が 1 つだけのフォルダをまとめて表示（main/java/jp/co/…）": [
   "index.html"
  ],
- "人": [
-  "team.js"
- ],
- "人で並行": [
-  "team.js"
- ],
- "人作業中": [
-  "team.js"
- ],
- "仕上がりました": [
-  "app.js"
- ],
- "仕上げ中": [
-  "app.js"
- ],
  "件": [
   "code.js",
   "sidebar.js"
@@ -862,6 +863,12 @@
  ],
  "件。": [
   "sidebar.js"
+ ],
+ "件を並行": [
+  "team.js"
+ ],
+ "件作業中": [
+  "team.js"
  ],
  "件待機中": [
   "chat.js"
@@ -893,11 +900,9 @@
  "体制図を開く": [
   "app.js"
  ],
- "何でも屋": [
-  "team.js"
- ],
  "何をしましょう？": [
-  "app.js"
+  "chat.js",
+  "workbench.js"
  ],
  "何をしましょう？（": [
   "chat.js"
@@ -929,6 +934,7 @@
  ],
  "作業中": [
   "app.js",
+  "chat.js",
   "sidebar.js",
   "team.js"
  ],
@@ -1017,11 +1023,9 @@
  "別のプロセスで実行中": [
   "chat.js"
  ],
- "刻み中": [
-  "app.js"
- ],
  "削除": [
-  "app.js"
+  "app.js",
+  "chat.js"
  ],
  "削除しました": [
   "app.js"
@@ -1054,14 +1058,8 @@
  "回答する": [
   "chat.js"
  ],
- "図面を確認中": [
-  "app.js"
- ],
  "報告": [
   "team.js"
- ],
- "墨付け中": [
-  "app.js"
  ],
  "変更": [
   "sidebar.js"
@@ -1071,6 +1069,12 @@
  ],
  "変更の要約": [
   "sidebar.js"
+ ],
+ "変更を捨てて削除": [
+  "chat.js"
+ ],
+ "変更を捨てて削除しますか？": [
+  "chat.js"
  ],
  "外す": [
   "sidebar.js"
@@ -1089,7 +1093,11 @@
  ],
  "完了": [
   "app.js",
+  "chat.js",
   "team.js"
+ ],
+ "完了の音を鳴らす": [
+  "app.js"
  ],
  "定義の検索に失敗:": [
   "code.js"
@@ -1101,9 +1109,6 @@
   "code.js"
  ],
  "実行": [
-  "app.js"
- ],
- "寸法取り中": [
   "app.js"
  ],
  "対象": [
@@ -1146,9 +1151,6 @@
  "戻る場所はありません": [
   "code.js"
  ],
- "承知しました。取りかかります…": [
-  "chat.js"
- ],
  "承認": [
   "fx.js"
  ],
@@ -1161,9 +1163,6 @@
  "折り畳む": [
   "app.js",
   "index.html"
- ],
- "拍子木を鳴らす": [
-  "app.js"
  ],
  "拒否": [
   "chat.js"
@@ -1205,11 +1204,17 @@
  "新しいセッション ·": [
   "chat.js"
  ],
+ "新しいセッションは Git の worktree を作って作業する": [
+  "index.html"
+ ],
  "新しいタブ": [
   "editors.js"
  ],
  "新しいタブで開く": [
   "editors.js"
+ ],
+ "新しいブランチの worktree を作り、その中で作業します（Git リポジトリのとき）。クリックで切替": [
+  "chat.js"
  ],
  "新しい上流（origin）": [
   "sidebar.js"
@@ -1257,8 +1262,8 @@
  "最近": [
   "palette.js"
  ],
- "木取り中": [
-  "app.js"
+ "未コミットの変更があります": [
+  "chat.js"
  ],
  "未送信コミット": [
   "sidebar.js"
@@ -1268,9 +1273,6 @@
  ],
  "本文の幅": [
   "index.html"
- ],
- "棟梁": [
-  "team.js"
  ],
  "検索": [
   "index.html"
@@ -1296,10 +1298,7 @@
  "正規表現": [
   "index.html"
  ],
- "段取り中": [
-  "app.js"
- ],
- "段取り役": [
+ "汎用": [
   "team.js"
  ],
  "添付画像": [
@@ -1326,10 +1325,7 @@
  "空のセッションも一覧に出す": [
   "index.html"
  ],
- "第": [
-  "team.js"
- ],
- "終わったら拍子木を鳴らす": [
+ "終わったら音を鳴らす": [
   "index.html"
  ],
  "終了": [
@@ -1342,9 +1338,6 @@
  "終了して削除": [
   "app.js"
  ],
- "組み上げ中": [
-  "app.js"
- ],
  "結果": [
   "app.js"
  ],
@@ -1355,9 +1348,6 @@
   "chat.js"
  ],
  "考え中…": [
-  "team.js"
- ],
- "職人": [
   "team.js"
  ],
  "自由記述": [
@@ -1405,19 +1395,12 @@
  "裏で実行": [
   "team.js"
  ],
- "親方": [
-  "fx.js",
-  "team.js"
- ],
- "親方ことば（作業中の掛け声・労いのひとこと）": [
-  "index.html"
- ],
- "親方の判断待ち": [
-  "chat.js"
- ],
  "言語 / Language": [
   "app.js",
   "index.html"
+ ],
+ "計画": [
+  "team.js"
  ],
  "計画の承認": [
   "chat.js"
@@ -1426,7 +1409,7 @@
   "app.js",
   "index.html"
  ],
- "設定係": [
+ "設定作業": [
   "team.js"
  ],
  "許可": [
@@ -1462,7 +1445,7 @@
  "調べて計画を立てるだけ（変更しない）": [
   "app.js"
  ],
- "調べ役": [
+ "調査": [
   "team.js"
  ],
  "質問": [
@@ -1493,23 +1476,11 @@
  "進む": [
   "app.js"
  ],
- "遅くまでお疲れさまです、親方。何を片付けましょう？": [
-  "app.js"
- ],
  "選んだフォルダを一覧に加えます（Git リポジトリでなくても可）。": [
   "app.js"
  ],
  "選択した": [
   "sidebar.js"
- ],
- "釘打ち中": [
-  "app.js"
- ],
- "鉋がけ中": [
-  "app.js"
- ],
- "鑿を研ぎ中": [
-  "app.js"
  ],
  "閉じる": [
   "app.js",
@@ -1524,9 +1495,6 @@
  ],
  "開始しています…": [
   "chat.js"
- ],
- "陣": [
-  "team.js"
  ],
  "高コントラスト（明）": [
   "app.js"

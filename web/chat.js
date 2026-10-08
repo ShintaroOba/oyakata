@@ -8,7 +8,7 @@
   const {
     $, $$, esc, api, state, bus, md, toast, sessionTitle, statusLabel, stripCwd, fmtTokens, fmtDuration, shortModel, buildRange,
     observeMermaid, bindTranscript, TOOL_ICON, toolInputHtml, MODELS, EFFORTS, MODES, MODE_CYCLE, DEFAULT_MODE, copyText, relTo,
-    contextWindow, craftVerb, doneWord, greeting, basename, isPrompt, repoOfCwd, agentInfo, agentLabel,
+    contextWindow, basename, isPrompt, repoOfCwd, agentInfo, agentLabel,
   } = OY;
 
   const INITIAL_WINDOW = 300;
@@ -50,6 +50,7 @@
       <div class="statusline">
         <button type="button" class="sl-mode" data-pop></button>
         <span class="sl-hint"></span>
+        <button type="button" class="sl-wt" hidden></button>
         <span class="spacer"></span>
         <button type="button" class="sl-model" data-pop></button>
         <button type="button" class="sl-effort" data-pop></button>
@@ -69,7 +70,7 @@
       this.agent = this.session?.agent || data.agent || 'claude';
       this.run = null;
       // Choices for a draft or a resumed session; a running one takes them from Claude Code.
-      this.opts = { model: '', mode: DEFAULT_MODE, effort: '' };
+      this.opts = { model: '', mode: DEFAULT_MODE, effort: '', worktree: state.config.worktree !== false };
       this.renderedFrom = 0;
       this.lastDateKey = null;
       this.follow = true;
@@ -99,7 +100,6 @@
         bus.on('reset', (d) => { if (d.session === this.id) this.load(); }),
         bus.on('run', (d) => { if (d.run?.session_id === this.id) this.onRun(d.run); }),
         bus.on('lagged', () => this.load()),
-        bus.on('whimsy', () => { this.updateActivity(); if (!this.q('.welcome').hidden) this.showWelcome(); }),
       ];
       bindTranscript(this.scroller, { items: () => this.items, cwd: () => this.cwd(), sessionId: () => this.id });
       bindTranscript(this.q('.pending-cards'), { items: () => [], cwd: () => this.cwd(), sessionId: () => this.id });
@@ -178,13 +178,16 @@
       const name = repo?.name || basename(cwd || '');
       const starting = this.starting || (this.session && this.session.status !== 'ended');
       w.innerHTML = `<img class="brand-mark big" src="/assets/icon.svg" alt="">
-        <div class="wl-greet">${starting ? (state.whimsy ? t('承知しました。取りかかります…') : t('開始しています…')) : esc(greeting())}</div>
+        <div class="wl-greet">${starting ? t('開始しています…') : t('何をしましょう？')}</div>
         <div class="wl-where"><span class="wl-repo">📁 ${esc(name)}</span><span class="wl-branch"></span><div class="wl-path">${esc(cwd || '')}</div></div>
         ${this.pendingPrompt ? `<div class="msg user"><div class="bubble">${esc(this.pendingPrompt)}</div></div>` : ''}
         ${starting ? '' : t('<div class="wl-tips"><kbd>Enter</kbd> 送信 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 改行 · <kbd>Shift</kbd>+<kbd>Tab</kbd> 権限モード · <kbd>Esc</kbd> 中断</div>')}`;
       w.hidden = false;
-      const root = repo?.root;
-      if (root) {
+      const root = repo?.worktree || repo?.root;
+      if (this.isDraft() && !starting && this.opts.worktree) {
+        const b = $('.wl-branch', w);
+        if (b) b.textContent = t('⎇ 新しい worktree で始めます');
+      } else if (root) {
         api.get(`/api/git/status?root=${encodeURIComponent(root)}`).then((st) => {
           const b = $('.wl-branch', w);
           if (b && st.branch) b.textContent = `⎇ ${st.branch}${st.entries?.length ? ` ${t("· 変更")} ${st.entries.length}` : ''}`;
@@ -256,13 +259,13 @@
       return { idx: 0, ts: this.session?.last_at || null };
     }
     flashDone() {
-      const t = this.turnStart();
-      const secs = t.ts ? (Date.now() - new Date(t.ts).getTime()) / 1000 : null;
-      this.doneFlash = { until: Date.now() + 6000, text: `${doneWord(t.idx)}${secs != null ? `（${fmtDuration(secs)}）` : ''}` };
+      const turn = this.turnStart();
+      const secs = turn.ts ? (Date.now() - new Date(turn.ts).getTime()) / 1000 : null;
+      this.doneFlash = { until: Date.now() + 6000, text: `${t('完了')}${secs != null ? `（${fmtDuration(secs)}）` : ''}` };
       this.updateActivity();
     }
-    /// The line above the input that says what Claude is doing, like the terminal's spinner:
-    /// "✻ 鉋がけ中… Bash: cargo test (12秒 · esc で中断)".
+    /// The line above the input that says what the agent is doing, like the terminal's spinner:
+    /// "✻ 作業中… Bash: cargo test (12秒 · esc で中断)".
     updateActivity() {
       const el = this.q('.activity');
       const s = this.session;
@@ -276,14 +279,14 @@
       };
       if (this.doneFlash && Date.now() < this.doneFlash.until && s?.status === 'idle') { set('done', '✓', this.doneFlash.text, '', ''); return; }
       this.doneFlash = null;
-      if (this.starting && !s) { set('busy', '✻', `${craftVerb(0)}…`, '', ''); return; }
+      if (this.starting && !s) { set('busy', '✻', `${t('作業中')}…`, '', ''); return; }
       if (!s || (s.status !== 'busy' && s.status !== 'waiting')) { el.hidden = true; return; }
       if (s.status === 'waiting') {
         const what = s.waiting_for ? s.waiting_for.replace(/^permission: /, '').replace(/^question$/, t('質問')) : '';
-        set('waiting', '✋', state.whimsy ? t('親方の判断待ち') : t('確認待ち'), what, s.owner === 'terminal' ? t('（ターミナルで答えてください）') : '');
+        set('waiting', '✋', t('確認待ち'), what, s.owner === 'terminal' ? t('（ターミナルで答えてください）') : '');
         return;
       }
-      const t = this.turnStart();
+      const turn = this.turnStart();
       let detail = '';
       for (let i = this.items.length - 1; i >= 0 && i >= this.items.length - 40; i--) {
         const it = this.items[i];
@@ -291,11 +294,11 @@
         if (it.t === 'text' || isPrompt(it)) break;
       }
       if (!detail && s.owner === 'oyakata' && this.run?.last_tool) detail = stripCwd(this.run.last_tool, this.cwd());
-      const secs = t.ts ? (Date.now() - new Date(t.ts).getTime()) / 1000 : null;
+      const secs = turn.ts ? (Date.now() - new Date(turn.ts).getTime()) / 1000 : null;
       const canInterrupt = s.owner === 'oyakata' || (s.owner === 'terminal' && s.live?.typeable && state.config.can_type !== false);
       const queued = s.owner === 'oyakata' ? (this.run?.queued?.length || 0) : 0;
       const meta = [secs != null ? fmtDuration(secs) : '', queued ? `${t("指示")} ${queued} ${t("件待機中")}` : '', canInterrupt ? t('esc で中断') : ''].filter(Boolean).join(' · ');
-      set('busy', '✻', `${craftVerb(t.idx)}…`, detail, meta ? `(${meta})` : '');
+      set('busy', '✻', `${t('作業中')}…`, detail, meta ? `(${meta})` : '');
     }
 
     // ------------------------------------------------------------- header
@@ -312,7 +315,7 @@
       agentEl.textContent = this.who();
       const repo = s?.repo || repoOfCwd(this.cwd());
       const r = this.q('.ch-repo');
-      r.textContent = repo?.name ? repo.name + (repo.subdir ? '/' + repo.subdir : '') : basename(this.cwd() || '');
+      r.textContent = (repo?.name ? repo.name + (repo.subdir ? '/' + repo.subdir : '') : basename(this.cwd() || '')) + (repo?.worktree ? ` ⎇ ${repo.branch || basename(repo.worktree)}` : '');
       r.title = this.cwd() || '';
       const team = this.q('.b-team');
       team.hidden = !s?.subagents;
@@ -344,6 +347,7 @@
       if (s?.subagents) h += row('team', '👥', t('体制図'), `<span class="mc">${s.subagents}</span>`);
       h += row('logs', state.showLogs ? '🙈' : '👁', state.showLogs ? t('作業ログを隠す') : t('作業ログを表示'));
       h += row('tree', '🌲', t('このリポジトリのツリーと Git'));
+      if (s?.repo?.worktree && s.status === 'ended') h += row('wt-remove', '🧹', t('worktree を削除'));
       if (s) h += row('copy-id', '📋', t('セッション ID をコピー'));
       if (s?.owner === 'oyakata') h += '<div class="msep"></div>' + row('end', '⏹', t('セッションを終了'), '', 'danger');
       if (s) h += (s.owner === 'oyakata' ? '' : '<div class="msep"></div>') + row('delete', '🗑', t('セッションを削除'), '', 'danger');
@@ -358,7 +362,7 @@
     }
     filesHtml() {
       const s = this.session;
-      const root = s?.repo?.root;
+      const root = OY.workRoot(s);
       return t('<div class="ptitle">このセッションが編集したファイル</div>') + (s?.edited_files || []).map((f) => {
         const rel = relTo(root, f.path);
         return `<div class="prow" data-path="${esc(f.path)}" data-rel="${esc(rel || '')}" draggable="true"><span class="pp" title="${esc(f.path)}">${esc(stripCwd(f.path, s.cwd))}</span><span class="pc">${f.edits ? `${t("編集")} ${f.edits}` : ''}${f.edits && f.writes ? ' · ' : ''}${f.writes ? `${t("書込")} ${f.writes}` : ''}</span>${rel ? t('<button type="button" class="btn open-diff">差分</button>') : ''}<button type="button" class="btn open-file">${t("開く")}</button></div>`;
@@ -377,11 +381,25 @@
       else if (act === 'team') OY.team.open(this.id);
       else if (act === 'logs') { OY.setShowLogs(!state.showLogs); toast(state.showLogs ? t('作業ログを表示します') : t('作業ログを隠しました（会話だけを表示）')); }
       else if (act === 'tree') { if (this.session) OY.followSession(this.session); OY.sidebar.show('explorer'); }
+      else if (act === 'wt-remove' && s?.repo?.worktree) this.removeWorktree(s.repo.worktree, s.repo.branch);
       else if (act === 'copy-id') copyText(this.id);
       else if (act === 'end') {
         if (!(await OY.confirmDialog(t('セッションを終了'), `${t("OYAKATA 側の")} ${this.who()} ${t("プロセスを終了します。会話は残るので、あとからこの画面で続きを送れば再開できます。")}`, { label: t('終了'), danger: true }))) return;
         try { await api.post(`/api/run/${encodeURIComponent(this.id)}/stop`); } catch (e) { toast(e.message); }
       } else if (act === 'delete' && s) OY.deleteSession(this.id);
+    }
+    /// Remove this session's worktree (and its branch, if merged). Uncommitted changes make
+    /// git refuse; then ask again before forcing.
+    async removeWorktree(path, branch) {
+      const msg = `${esc(path)}<br>${t('この worktree のフォルダを消します。ブランチ')} <code>${esc(branch || '')}</code> ${t('は、マージ済みなら一緒に消し、そうでなければ残します。会話の記録は残ります。')}`;
+      if (!(await OY.confirmDialog(t('worktree を削除'), msg, { label: t('削除'), danger: true }))) return;
+      const done = (r) => toast(r.branch_deleted ? t('worktree とブランチを削除しました') : r.branch ? `${t('worktree を削除しました。ブランチは残しています:')} ${r.branch}` : t('worktree を削除しました'));
+      try { done(await api.post('/api/worktree/remove', { path })); return; }
+      catch (e) {
+        if (e.status !== 409) { toast(e.message); return; }
+        if (!(await OY.confirmDialog(t('未コミットの変更があります'), `${esc(e.message)}<br>${t('変更を捨てて削除しますか？')}`, { label: t('変更を捨てて削除'), danger: true }))) return;
+      }
+      try { done(await api.post('/api/worktree/remove', { path, force: true })); } catch (e) { toast(e.message); }
     }
     jumpTo(idx) {
       while (this.renderedFrom > idx) this.loadMore(true);
@@ -410,6 +428,22 @@
       mb.innerHTML = mi ? `<span class="glyph">${mi.glyph}</span> ${esc(mi.label)}${c.edit ? t(' <span class="kh">(shift+tab で切替)</span>') : ''}` : (c.mode ? esc(c.mode) : t('<span class="kh">権限モード不明</span>'));
       mb.disabled = !c.edit;
       mb.title = mi ? mi.desc : '';
+      // Worktree: a toggle while the session is a draft, the branch afterwards.
+      const wt = this.q('.sl-wt');
+      const srepo = s?.repo;
+      if (this.isDraft()) {
+        wt.hidden = false;
+        wt.disabled = this.starting;
+        wt.className = 'sl-wt' + (this.opts.worktree ? ' on' : '');
+        wt.textContent = this.opts.worktree ? t('⎇ worktree で作業') : t('⎇ worktree なし');
+        wt.title = this.opts.worktree ? t('新しいブランチの worktree を作り、その中で作業します（Git リポジトリのとき）。クリックで切替') : t('このフォルダでそのまま作業します。クリックで worktree を使う');
+      } else if (srepo?.worktree) {
+        wt.hidden = false;
+        wt.disabled = true;
+        wt.className = 'sl-wt on';
+        wt.textContent = `⎇ ${srepo.branch || basename(srepo.worktree)}`;
+        wt.title = srepo.worktree;
+      } else wt.hidden = true;
       const hint = this.q('.sl-hint');
       hint.textContent = s?.owner === 'terminal' ? t('ターミナルで実行中') : s?.owner === 'external' ? t('別のプロセスで実行中') : (s && s.status === 'ended' && !this.isDraft()) ? t('再開時に適用') : (!this.interactive() && c.edit === 'live') ? t('次のターンから適用') : '';
       const model = this.q('.sl-model');
@@ -526,7 +560,7 @@
       this.updateActivity();
       if (this.follow) this.scrollToBottom();
       else if (items.some((it) => !OY.isLog(it) || state.showLogs)) this.q('.jump-latest').hidden = false;
-      if (items.some((it) => it.t === 'tool' && /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(it.name))) bus.emit('files-changed', { session: this.id, cwd: this.cwd(), root: this.session?.repo?.root });
+      if (items.some((it) => it.t === 'tool' && /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(it.name))) bus.emit('files-changed', { session: this.id, cwd: this.cwd(), root: OY.workRoot(this.session) });
       if (items.some((it) => it.t === 'tool' && (it.name === 'Agent' || it.name === 'Task'))) bus.emit('team-changed', { session: this.id });
     }
     patchItem(index, item) {
@@ -543,7 +577,7 @@
       observeMermaid(el);
       this.updateActivity();
       if (this.follow) this.scrollToBottom();
-      if (item.t === 'tool' && item.result && /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(item.name)) bus.emit('files-changed', { session: this.id, cwd: this.cwd(), root: this.session?.repo?.root, path: item.input?.file_path });
+      if (item.t === 'tool' && item.result && /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(item.name)) bus.emit('files-changed', { session: this.id, cwd: this.cwd(), root: OY.workRoot(this.session), path: item.input?.file_path });
       if (item.t === 'tool' && (item.name === 'Agent' || item.name === 'Task')) bus.emit('team-changed', { session: this.id });
     }
     scrollToBottom() { this.scroller.scrollTop = this.scroller.scrollHeight; }
@@ -685,9 +719,11 @@
       try {
         if (this.isDraft()) {
           const r = await api.post('/api/run/start', {
-            agent: this.agent, cwd: this.draftCwd, prompt: text, session_id: this.agentCfg().assigns_id ? undefined : this.id,
+            agent: this.agent, cwd: this.draftCwd, prompt: text, session_id: this.agentCfg().assigns_id ? undefined : this.id, worktree: this.opts.worktree,
             model: this.opts.model || undefined, permission_mode: this.opts.mode, effort: this.opts.effort || undefined,
           });
+          if (r.cwd) this.draftCwd = r.cwd;
+          if (r.note) toast(r.note);
           if (r.session_id && r.session_id !== this.id) this.rekey(r.session_id);
           this.starting = true;
           this.pendingPrompt = text;
@@ -741,7 +777,7 @@
         if (jump) { e.preventDefault(); this.closePopovers(); this.jumpTo(+jump.dataset.jump); return; }
         const row = e.target.closest('.prow');
         if (!row) return;
-        const root = this.session?.repo?.root;
+        const root = OY.workRoot(this.session);
         if (e.target.closest('.open-diff')) { this.closePopovers(); OY.editors.openDiff(root, row.dataset.rel); }
         else if (e.target.closest('.open-file') || (row.dataset.path && !e.target.closest('button'))) { this.closePopovers(); OY.editors.openFile(row.dataset.path, root); }
         else if (e.target.closest('.open-url')) { this.closePopovers(); OY.editors.openUrl(row.dataset.url); }
@@ -750,7 +786,7 @@
       q('.chat-head').addEventListener('dragstart', (e) => {
         const row = e.target.closest('.prow[data-path]');
         if (!row) return;
-        e.dataTransfer.setData('text/oy-open', JSON.stringify(OY.editors.fileDesc(row.dataset.path, this.session?.repo?.root)));
+        e.dataTransfer.setData('text/oy-open', JSON.stringify(OY.editors.fileDesc(row.dataset.path, OY.workRoot(this.session))));
       });
       q('.load-more button').addEventListener('click', () => this.loadMore());
       q('.jump-latest').addEventListener('click', () => { this.follow = true; this.scrollToBottom(); q('.jump-latest').hidden = true; });
@@ -776,6 +812,12 @@
         if (e.key === 'Escape' && e.target === this.el && this.session?.status === 'busy') this.interrupt();
       });
       q('.sl-mode').addEventListener('click', (e) => this.togglePopover('.pop-sl', () => this.modeMenuHtml(), e.currentTarget));
+      q('.sl-wt').addEventListener('click', () => {
+        if (!this.isDraft() || this.starting) return;
+        this.opts.worktree = !this.opts.worktree;
+        this.renderStatusline();
+        if (!this.q('.welcome').hidden) this.showWelcome();
+      });
       q('.sl-model').addEventListener('click', (e) => this.togglePopover('.pop-sl', () => this.modelMenuHtml(), e.currentTarget));
       q('.sl-effort').addEventListener('click', (e) => this.togglePopover('.pop-sl', () => this.effortMenuHtml(), e.currentTarget));
       q('.pop-sl').addEventListener('keydown', (e) => {

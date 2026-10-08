@@ -1,6 +1,6 @@
 ---
 name: oyakata
-description: "OYAKATA (親方) — open the browser command post that lists, follows and drives coding-agent sessions (Claude Code, Codex CLI, Gemini CLI, Copilot CLI, OpenCode) across repositories, and lets the user send instructions from the browser. Use when the user says things like 'open oyakata', 'show this in the browser', 'list my sessions', 'what are the other agents doing', 'this is hard to read in the terminal', or 'show me a diagram' — or in Japanese 「oyakata を開いて」「ブラウザで見たい」「セッション一覧」「他のリポジトリの Claude は何してる」「ターミナルだと読みづらい」「図で見たい」. After opening it, write diagrams as Mermaid."
+description: "OYAKATA (親方) — open the browser command post that lists, follows and drives coding-agent sessions (Claude Code, Codex CLI, Gemini CLI, Copilot CLI, OpenCode) across repositories, and lets the user send instructions from the browser. Use when the user says things like 'open oyakata', 'show this in the browser', 'list my sessions', 'what are the other agents doing', 'this is hard to read in the terminal', or 'show me a diagram' — or in Japanese 「oyakata を開いて」「ブラウザで見たい」「セッション一覧」「他のエージェントは何してる」「ターミナルだと読みづらい」「図で見たい」. After opening it, write diagrams as Mermaid."
 allowed-tools: Bash(oyakata:*)
 argument-hint: "[session-id]"
 ---
@@ -25,7 +25,7 @@ oyakata --focus <session-id> # open that session
 ```
 
 Run the first line when `$ARGUMENTS` is empty, the second when a session id was given.
-`run_in_background` is not needed.
+There is no need to run it in the background.
 
 Tell the user the URL from stdout (`OYAKATA is open at http://127.0.0.1:4848/...`) as is.
 
@@ -35,7 +35,7 @@ with the bundled script (no Rust toolchain needed). Do not guess other commands.
 ```bash
 # macOS / Linux
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/install.sh"
-# Windows (the Bash tool is Git Bash, so call PowerShell from it)
+# Windows (from Git Bash, call PowerShell)
 powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/install.ps1"
 ```
 
@@ -73,6 +73,12 @@ While OYAKATA is open, this session's replies are rendered as HTML. Follow these
   typed into (Windows only): "Send to terminal" types into that console, so permission
   prompts and questions are answered in the terminal. Sessions running in an IDE
   extension or the SDK cannot be driven.
+- New sessions OYAKATA starts in a Git repository work in their own worktree: a branch
+  `oyakata/<name>` checked out under `~/.oyakata/worktrees/<repository>/<name>`, so parallel
+  sessions never edit the same files. The ⎇ button on the status line (before the first
+  message), the Settings checkbox, or `oyakata new --no-worktree` work in the folder itself
+  instead. When done, merge the branch, end the session and pick "Remove worktree" from the
+  chat's ⋯ menu (the branch is deleted only if merged).
 - A session OYAKATA owns can also be typed into from a terminal with `oyakata attach <id>`
   (alongside the browser). `/quit` detaches the terminal, `/stop` ends the session.
 - For long-running use, suggest starting the daemon from a terminal (`oyakata`) rather

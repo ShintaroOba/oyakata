@@ -37,8 +37,6 @@ OYAKATA solves this in a single browser tab. It reads the records each agent alr
 | **Direct** | Send instructions from the browser. With Claude Code, answer permission prompts and questions in place too |
 | **Ship** | Open the files the agent changed in an editor next to the chat, check the diff, and commit / push |
 
-> About the name: *oyakata* (親方) is the master of a Japanese workshop. You are the oyakata, watching and directing the main agent (*tōryō*, 棟梁, the master builder) and its sub-agents (*shokunin*, 職人, the craftsmen).
-
 ## Supported agents
 
 | Agent | Sessions are read from | Started and driven from the browser with |
@@ -62,9 +60,11 @@ A session that is currently running in another process (a terminal, for example)
 
 ## Get started with the skill
 
-Install the `/oyakata` skill as a Claude Code plugin and you are done. No Rust toolchain needed.
+OYAKATA ships as an agent skill. Install the skill, ask your agent to open OYAKATA, and the agent does the rest. No Rust toolchain needed.
 
-**1. Install the plugin** (inside Claude Code)
+**1. Install the skill**
+
+In Claude Code, add it as a plugin:
 
 ```
 /plugin marketplace add ShintaroOba/oyakata
@@ -73,17 +73,19 @@ Install the `/oyakata` skill as a Claude Code plugin and you are done. No Rust t
 
 From a terminal: `claude plugin marketplace add ShintaroOba/oyakata`, then `claude plugin install oyakata@oyakata`.
 
-**2. Type `/oyakata`**
+For Codex CLI, Gemini CLI, Copilot CLI and OpenCode, [install the binary](#install-the-binary) and run `oyakata install` once. It puts the same SKILL.md in the shared `~/.agents/skills` folder these agents read, and in `~/.claude/skills` for Claude Code.
+
+**2. Ask for it**
 
 ```
 /oyakata
 ```
 
-The first time, the `oyakata` binary is not there yet, so Claude installs a prebuilt one from [GitHub Releases](https://github.com/ShintaroOba/oyakata/releases) using the script bundled with the skill (Windows / macOS / Linux). It then starts the background daemon and opens the browser on the current session. On the first visit the browser asks which language you want (English / Japanese).
+In Claude Code, type `/oyakata`. In any agent, phrases like "open oyakata", "show this in the browser" or "what are the other agents doing?" trigger the skill too.
 
-From then on, the Claude in that session knows it is being read in a browser: it writes comparisons as tables and diagrams in a renderable form (Mermaid). You do not have to type `/oyakata` literally; phrases like "show this in the browser" or "what are the other agents doing?" trigger the skill too.
+If the `oyakata` binary is missing, the agent installs a prebuilt one from [GitHub Releases](https://github.com/ShintaroOba/oyakata/releases) with the install script (Windows / macOS / Linux). It then starts the background daemon and opens the browser. On the first visit the browser asks which language you want (English / Japanese).
 
-**To use it from Codex CLI, Gemini CLI, Copilot CLI or OpenCode**, run `oyakata install` once after installing the binary. It puts the same SKILL.md where those agents look for skills (`~/.codex/skills`, the shared `~/.agents/skills`), so asking the agent to "open oyakata" works the same way.
+From then on, the agent in that session knows it is being read in a browser: it writes comparisons as tables and diagrams in a renderable form (Mermaid).
 
 ## A tour of the screen
 
@@ -91,7 +93,7 @@ From then on, the Claude in that session knows it is being read in a browser: it
 
 ![Session list and conversation (dark theme)](docs/images/hero-dark.png)
 
-- **The sidebar** lists running sessions at the top and each repository's history below. The dot shows the state: orange is working, green is idle, purple is waiting for your decision. Sessions of agents other than Claude Code carry a label such as "Codex CLI". The counts appear at the bottom of the sidebar too ("1 working · 1 waiting").
+- **The sidebar** lists running sessions at the top and each repository's history below. The dot shows the state: orange is working, green is idle, purple is waiting for your decision. Sessions of agents other than Claude Code carry a label such as "Codex CLI", and sessions working in a worktree show their branch after ⎇. The counts appear at the bottom of the sidebar too ("1 working · 1 waiting").
 - **Click a session** to open its conversation. The work log (tool calls and so on) is hidden; the single line above the input tells you what the agent is doing right now (`Bash: Run the filter tests … esc to interrupt`). A setting shows the full log.
 - **Under the input** is a status line like the terminal's: permission mode on the left (cycle with Shift+Tab), model, effort level and context usage on the right. For agents other than Claude Code, changes apply from the next turn.
 
@@ -101,13 +103,15 @@ From then on, the Claude in that session knows it is being read in a browser: it
 
 Press "＋" in the header, pick an agent and a folder. An empty chat opens, and the agent starts when you send the first message. Permission mode starts as auto.
 
+In a Git repository, each new session works in its own worktree by default. OYAKATA creates a branch `oyakata/<name>` from the current commit, checks it out under `~/.oyakata/worktrees/<repository>/<name>`, and starts the agent there. Sessions running side by side on one repository therefore never edit each other's files or your own checkout. The session is still listed under its repository, and the file tree, diffs and Git view show the worktree. To work in the folder itself, click the ⎇ button on the status line before the first message, or turn worktrees off for every session in Settings. When you are done, end the session and pick "Remove worktree" from the chat's ⋯ menu. The folder is deleted, and the branch is deleted too if it has been merged.
+
 With Claude Code you can send while it is busy: the prompt is handed over at the next tool-call boundary, and until then it is listed above the input as pending. Permission requests, `AskUserQuestion` prompts and plan approvals appear as cards in the chat that you answer in place. Approvals get a vermilion "承認" (approved) stamp, rejections an indigo "差戻" (sent back) stamp. With the other agents, a prompt sent while a turn runs becomes the next turn once the current one ends.
 
 ### Team chart (sub-agents)
 
 ![Team chart](docs/images/team.png)
 
-Press "👥" at the top right of the chat to see how the main agent (tōryō) and its sub-agents (shokunin) are organised: who is working on what, which tool each is running right now, and what each reported when done. Agents dispatched together are grouped into a wave (陣), updated live.
+Press "👥" at the top right of the chat to see the main agent and its sub-agents: who is working on what, which tool each is running right now, and what each reported when done. Sub-agents dispatched together are grouped, and the chart updates live.
 
 ### Files, diffs and Git
 
@@ -120,7 +124,8 @@ More things it does:
 - `Ctrl+P` fuzzy-opens files; `Ctrl+Shift+F` searches the repository's text or all your conversations
 - `F12` / Ctrl+click goes to a definition and `Shift+F12` lists references, with no language server required
 - A file reference like `src/main.rs:42` in a message opens that line in the editor
-- Wooden clappers sound when a worker finishes. Optional desktop notifications when a session goes idle or waits for a decision
+- Markdown files switch between "Preview" (rendered) and "Text" (editable)
+- A short sound plays when an agent finishes a turn. Optional desktop notifications when a session goes idle or waits for a decision
 - Themes: light, dark, sepia, Solarized, Nord, Dracula and high contrast, plus accent color, font size and content width
 - Delete sessions you no longer need. Records move to a trash folder (`~/.oyakata/trash`) and are purged after 30 days (OpenCode sessions live in a database and are deleted in place)
 
@@ -174,7 +179,7 @@ If you keep the daemon around for a long time, start it from a terminal (`oyakat
 | --- | --- |
 | `oyakata --no-open` | Start the daemon without opening a browser |
 | `oyakata serve` | Run the server in the foreground (handy for watching logs) |
-| `oyakata new "first prompt"` | Start an OYAKATA-owned session in the current folder and attach this terminal to it. `--agent codex` picks the agent; also `--cwd <dir>`, `--model`, `--mode`, `--effort`, `--no-attach` |
+| `oyakata new "first prompt"` | Start an OYAKATA-owned session in the current folder and attach this terminal to it. In a Git repository it runs in a new worktree; `--no-worktree` works in the folder itself. `--agent codex` picks the agent; also `--cwd <dir>`, `--model`, `--mode`, `--effort`, `--no-attach` |
 | `oyakata attach <session-id>` | Attach this terminal to an OYAKATA-owned session (`/quit` detaches, `/stop` ends the session) |
 | `oyakata attach --resume <session-id>` | Resume an ended session under OYAKATA |
 | `oyakata sessions` | List the sessions OYAKATA owns right now |
@@ -217,7 +222,7 @@ Nowhere. The server listens on `127.0.0.1` only, and viewing just reads the file
 
 **Do I need to change my agents' settings?**
 
-No. Optionally, to make every Claude Code session draw diagrams as Mermaid, add a line like this to `~/.claude/CLAUDE.md`:
+No. Optionally, to make every session draw diagrams as Mermaid, add a line like this to the agent's global instructions (`~/.claude/CLAUDE.md` for Claude Code, `~/.codex/AGENTS.md` for Codex CLI, `~/.gemini/GEMINI.md` for Gemini CLI):
 
 ```
 Write diagrams in ```mermaid fences (OYAKATA renders them in the browser). Do not draw diagrams as ASCII art.
@@ -264,6 +269,7 @@ Shortcuts follow VS Code. The full list is also in settings ("Shortcuts").
 - **Context meter.** The last response's tokens (input + cache + output) divided by the model's context window. For OYAKATA-started Claude Code sessions the window comes from Claude Code; otherwise it is inferred from the model name.
 - **Team chart.** Reads `<session>/subagents/agent-*.jsonl` and `*.meta.json` and matches them to the parent's Agent tool calls (Claude Code).
 - **Browser-started sessions.** Claude Code is a child process of `claude -p --input-format stream-json --output-format stream-json --permission-prompt-tool stdio`: prompts go in on stdin and permission requests come back on stdout. The other agents are started once per prompt (`codex exec`, `gemini`, `copilot`, `opencode run`) with the prompt on stdin; their JSON event stream drives the status line, and the next prompt resumes the same session. Every agent writes its own transcript, so display goes through the same path as any other session.
+- **Worktrees.** A new session runs `git worktree add -b oyakata/<name> <folder> HEAD` in the repository it was started from. The name comes from the first words of an English prompt, or from the time otherwise. A worktree's `.git` file points back at the main repository, so its sessions are listed there. "Remove worktree" runs `git worktree remove` and then `git branch -d`, which keeps a branch that has not been merged.
 - **Typing into terminals (Windows)** writes keystrokes to that console's input buffer (`AttachConsole` + `WriteConsoleInputW`). The process start time is checked first, so a reused pid is never typed into.
 - **Git operations** call the `git` CLI directly. Commit uses the selected files; push adds `-u origin HEAD` when there is no upstream; pull is `--ff-only`. Branch switching is intentionally absent.
 - **Go to definition and search** use `git grep`. No language server is involved.
@@ -298,10 +304,10 @@ src/
   i18n.rs        language of the terminal output
   console.rs     typing into terminal-run sessions (Windows console input)
   client.rs      terminal front end (new / attach / sessions)
-  gitops.rs      git status / tree / diff / log / grep / commit / push / pull / clone
+  gitops.rs      git status / tree / diff / log / grep / commit / push / pull / clone / worktree
   live.rs        running sessions (pid liveness)
   paths.rs       PATH augmentation, executable lookup and the ~/.oyakata folder
-  repo.rs        cwd → repository name
+  repo.rs        cwd → repository name (a worktree maps to its main repository)
 web/
   index.html / style.css / icon.svg
   i18n.js / i18n-en.js  language switch and the English dictionary (generated from docs/i18n)
@@ -312,7 +318,7 @@ web/
   code.js        go to definition / references, back / forward, file references in messages
   palette.js     Ctrl+P / command palette / pickers
   search.js      full-text search view (files / conversations)
-  fx.js          hanko stamps and hyōshigi clappers
+  fx.js          approval stamps and the completion sound
   editors.js     CodeMirror editor, diff / commit / URL / sub-agent views
   sidebar.js     sessions / tree / Git (commit, push, pull), delete, add repository
   vendor/        bundled libraries (marked, DOMPurify, highlight.js, Mermaid, CodeMirror 5)
