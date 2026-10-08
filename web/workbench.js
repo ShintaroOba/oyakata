@@ -139,7 +139,7 @@
     const tab = tabs.get(key);
     if (!tab) return;
     if (tab.dirty && !force) {
-      const ok = await OY.confirmDialog('保存していない変更があります', `${esc(tab.desc.title)} を閉じると変更は失われます。`, { label: '閉じる', danger: true });
+      const ok = await OY.confirmDialog(t('保存していない変更があります'), `${esc(tab.desc.title)} ${t("を閉じると変更は失われます。")}`, { label: t('閉じる'), danger: true });
       if (!ok) return;
     }
     const pane = paneOf(key);
@@ -153,6 +153,21 @@
     }
     render();
     save();
+  }
+  /// Move a tab to a new key (a draft chat whose session id the agent assigned on start).
+  function rekey(oldKey, newKey, data) {
+    const tab = tabs.get(oldKey);
+    if (!tab || tabs.has(newKey)) return false;
+    tabs.delete(oldKey);
+    tab.desc = { ...tab.desc, key: newKey, data: { ...(tab.desc.data || {}), ...(data || {}) } };
+    tabs.set(newKey, tab);
+    for (const p of panes()) {
+      p.tabs = p.tabs.map((k) => (k === oldKey ? newKey : k));
+      if (p.active === oldKey) p.active = newKey;
+    }
+    $$(`[data-key="${CSS.escape(oldKey)}"]`, rootEl).forEach((el) => { el.dataset.key = newKey; });
+    save();
+    return true;
   }
   function setTitle(key, title) {
     const tab = tabs.get(key);
@@ -190,7 +205,7 @@
     wrap.className = 'tab-content';
     wrap.dataset.key = key;
     if (!factory) {
-      wrap.innerHTML = `<div class="loading err">不明な種類: ${esc(tab.desc.kind)}</div>`;
+      wrap.innerHTML = `<div class="loading err">${t("不明な種類:")} ${esc(tab.desc.kind)}</div>`;
     } else {
       try {
         tab.inst = factory(tab.desc, tab);
@@ -206,12 +221,12 @@
     const tab = tabs.get(key);
     if (!tab) return '';
     const d = tab.desc;
-    return `<div class="ptab${active ? ' active' : ''}${tab.dirty ? ' dirty' : ''}" draggable="true" data-key="${esc(key)}" title="${esc(d.title)}"><span class="pt-icon">${d.icon || ''}</span><span class="pt-title">${esc(d.title)}</span><span class="pt-dirty"${tab.dirty ? '' : ' hidden'}>●</span><button type="button" class="pt-close" title="閉じる">✕</button></div>`;
+    return `<div class="ptab${active ? ' active' : ''}${tab.dirty ? ' dirty' : ''}" draggable="true" data-key="${esc(key)}" title="${esc(d.title)}"><span class="pt-icon">${d.icon || ''}</span><span class="pt-title">${esc(d.title)}</span><span class="pt-dirty"${tab.dirty ? '' : ' hidden'}>●</span><button type="button" class="pt-close" title="${t("閉じる")}">✕</button></div>`;
   }
   function refreshPane(pane, paneEl) {
     const bar = $('.pane-tabs', paneEl);
     bar.innerHTML = pane.tabs.map((k) => tabHtml(k, k === pane.active)).join('')
-      + '<span class="pt-spacer"></span><div class="pt-actions"><button type="button" class="icon-btn small split-right" title="右に分割">◫</button><button type="button" class="icon-btn small split-down" title="下に分割">⬓</button></div>';
+      + t('<span class="pt-spacer"></span><div class="pt-actions"><button type="button" class="icon-btn small split-right" title="右に分割">◫</button><button type="button" class="icon-btn small split-down" title="下に分割">⬓</button></div>');
     const body = $('.pane-body', paneEl);
     for (const k of pane.tabs) {
       const tab = ensureInstance(k);
@@ -228,8 +243,8 @@
         empty = document.createElement('div');
         empty.className = 'pane-empty';
         const repo = OY.state.repos.find((r) => OY.norm(r.root) === wsKey);
-        const where = wsKey && wsKey !== '_' ? `<div class="pe-ws">📁 ${esc(repo?.name || OY.basename(OY.state.activeRepo || wsKey))} で開いているタブはありません</div>` : '';
-        empty.innerHTML = `<img class="brand-mark big" src="/assets/icon.svg" alt=""><div class="pe-greet">${esc(OY.greeting())}</div>${where}<div>左の一覧からセッションを開くか、<button type="button" class="link-btn pe-new">新しいセッション</button>を始めてください。</div><div class="hint"><kbd>Ctrl</kbd>+<kbd>P</kbd> ファイル &nbsp; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> 全文検索 &nbsp; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> コマンド</div>`;
+        const where = wsKey && wsKey !== '_' ? `<div class="pe-ws">📁 ${esc(repo?.name || OY.basename(OY.state.activeRepo || wsKey))} ${t("で開いているタブはありません")}</div>` : '';
+        empty.innerHTML = `<img class="brand-mark big" src="/assets/icon.svg" alt=""><div class="pe-greet">${esc(OY.greeting())}</div>${where}<div>${t("左の一覧からセッションを開くか、")}<button type="button" class="link-btn pe-new">${t("新しいセッション")}</button>${t("を始めてください。")}</div><div class="hint"><kbd>Ctrl</kbd>+<kbd>P</kbd> ${t("ファイル &nbsp;")} <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> ${t("全文検索 &nbsp;")} <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> ${t("コマンド")}</div>`;
         $('.pe-new', empty).addEventListener('click', () => OY.newSessionDialog(OY.state.activeRepo));
         body.appendChild(empty);
       }
@@ -531,7 +546,7 @@
   }
 
   OY.wb = {
-    init, restore, reset, registerKind, open, openAt, close, activate, setTitle, setDirty, has, get, activeTab, splitActive, switchWorkspace,
+    init, restore, reset, registerKind, open, openAt, close, activate, setTitle, setDirty, rekey, has, get, activeTab, splitActive, switchWorkspace,
     panes: () => panes(), activePane: () => activePaneId, workspace: () => wsKey,
   };
 })();

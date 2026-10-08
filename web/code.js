@@ -114,19 +114,19 @@
     const fromRel = from?.path ? relTo(root, from.path) : null;
     let res;
     try { res = await grep(root, defPattern(sym), { pcre: true, cs: true, max: 300 }); }
-    catch (e) { toast(`定義の検索に失敗: ${e.message}`); return; }
+    catch (e) { toast(`${t("定義の検索に失敗:")} ${e.message}`); return; }
     let hits = rank(res.matches || [], sym, fromRel);
     // Being on the definition already means "show me who uses it", as in VS Code.
     hits = hits.filter((m) => !(m.path === fromRel && m.line === from?.line));
     if (!hits.length) {
-      toast(`「${sym}」の定義が見つからないため、参照を表示します`);
+      toast(`「${sym}${t("」の定義が見つからないため、参照を表示します")}`);
       references(sym, root);
       return;
     }
     const toLoc = (m) => ({ path: joinPath(root, m.path), root, line: m.line, select: sym });
     if (hits.length === 1 || hits[0].score - hits[1].score >= 30) { jump(toLoc(hits[0])); return; }
     OY.palette.list({
-      title: `「${sym}」の定義候補 ${hits.length} 件`,
+      title: `「${sym}${t("」の定義候補")} ${hits.length} ${t("件")}`,
       items: hits.slice(0, 80).map((m) => ({ icon: '◆', label: `${basename(m.path)}:${m.line}`, detail: m.path, hint: m.text.trim(), run: () => jump(toLoc(m)) })),
     });
   }
@@ -172,10 +172,10 @@
     let hits = list.filter((f) => f === p);
     if (!hits.length) hits = list.filter((f) => f.toLowerCase() === lower);
     if (!hits.length) hits = list.filter((f) => f.toLowerCase().endsWith('/' + lower));
-    if (!hits.length) { toast(`${p} はこのリポジトリに見つかりません`); return true; }
+    if (!hits.length) { toast(`${p} ${t("はこのリポジトリに見つかりません")}`); return true; }
     const loc = (f) => ({ path: joinPath(root, f), root, line: ref.line, col: ref.col });
     if (hits.length === 1) { jump(loc(hits[0])); return true; }
-    OY.palette.list({ title: `${p} の候補`, items: hits.slice(0, 60).map((f) => ({ icon: '📄', label: basename(f), detail: f, run: () => jump(loc(f)) })) });
+    OY.palette.list({ title: `${p} ${t("の候補")}`, items: hits.slice(0, 60).map((f) => ({ icon: '📄', label: basename(f), detail: f, run: () => jump(loc(f)) })) });
     return true;
   }
 

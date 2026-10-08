@@ -28,7 +28,7 @@
     const stack = sb.mode === 'stack';
     views.classList.toggle('stack', stack);
     $('#sb-mode').classList.toggle('on', stack);
-    $('#sb-mode').textContent = stack ? '並べて表示中' : '並べて表示';
+    $('#sb-mode').textContent = stack ? t('並べて表示中') : t('並べて表示');
     $$('.sb-vsplit', views).forEach((s) => s.remove());
     for (const v of $$('.sb-view', views)) {
       const name = v.dataset.view;
@@ -46,7 +46,7 @@
         h.className = 'sb-vsplit';
         h.dataset.a = list[i - 1].dataset.view;
         h.dataset.b = list[i].dataset.view;
-        h.title = 'ドラッグで高さを変更';
+        h.title = t('ドラッグで高さを変更');
         list[i].before(h);
       }
     }
@@ -103,16 +103,17 @@
     if (s.status !== 'ended') cls.push(s.status);
     const unread = state.unread.get(s.id) || 0;
     const name = s.live?.name ? `<span class="chip tiny">${esc(s.live.name)}</span>` : '';
-    const owner = s.owner === 'oyakata' ? '<span class="chip tiny owner">親方</span>' : '';
-    const team = s.subagents ? `<span class="chip tiny" title="サブエージェント ${s.subagents}">👥${s.subagents}</span>` : '';
+    const owner = s.owner === 'oyakata' ? t('<span class="chip tiny owner">親方</span>') : '';
+    const agent = s.agent && s.agent !== 'claude' ? `<span class="chip tiny agent">${esc(OY.agentLabel(s.agent))}</span>` : '';
+    const team = s.subagents ? `<span class="chip tiny" title="${t("サブエージェント")} ${s.subagents}">👥${s.subagents}</span>` : '';
     const sub = s.repo?.subdir ? ` <span class="row-sub">/${esc(s.repo.subdir)}</span>` : '';
     const branch = s.git_branch && s.git_branch !== 'HEAD' ? ` · ${esc(s.git_branch)}` : '';
-    const delTitle = s.status === 'ended' ? 'このセッションを削除' : s.owner === 'oyakata' ? '終了してから削除' : 'ターミナルで動いています（終了すると削除できます）';
+    const delTitle = s.status === 'ended' ? t('このセッションを削除') : s.owner === 'oyakata' ? t('終了してから削除') : s.owner === 'external' ? t('別のプロセスで動いています（終わると削除できます）') : t('ターミナルで動いています（終了すると削除できます）');
     const del = `<button type="button" class="row-del" title="${delTitle}">🗑</button>`;
     return `<div class="row ${cls.join(' ')}" draggable="true" data-id="${esc(s.id)}" title="${esc(sessionTitle(s))}">
       <span class="dot"></span>
       <span class="row-title">${esc(sessionTitle(s))}</span>
-      <span class="row-meta">${esc(ago(s.last_at))} · ${s.user_turns}往復${branch}${sub}${name}${owner}${team}</span>
+      <span class="row-meta">${esc(ago(s.last_at))} · ${s.user_turns}${t("往復")}${branch}${sub}${agent}${name}${owner}${team}</span>
       ${unread ? `<span class="badge">${unread}</span>` : ''}${del}
     </div>`;
   }
@@ -121,10 +122,10 @@
     const isActiveRepo = root && norm(root) === norm(state.activeRepo);
     let btns = '';
     if (root) {
-      btns = `<button type="button" class="g-btn g-tree" data-root="${esc(root)}" title="ツリーと Git を開く">⊞</button><button type="button" class="g-btn g-add" data-root="${esc(root)}" title="このフォルダで新しいセッション">＋</button>`;
-      if (added) btns += `<button type="button" class="g-btn g-remove" data-root="${esc(root)}" title="一覧から外す（フォルダは消えません）">✕</button>`;
+      btns = `<button type="button" class="g-btn g-tree" data-root="${esc(root)}" title="${t("ツリーと Git を開く")}">⊞</button><button type="button" class="g-btn g-add" data-root="${esc(root)}" title="${t("このフォルダで新しいセッション")}">＋</button>`;
+      if (added) btns += `<button type="button" class="g-btn g-remove" data-root="${esc(root)}" title="${t("一覧から外す（フォルダは消えません）")}">✕</button>`;
     }
-    const body = sessions.length ? sessions.map(rowHtml).join('') : `<div class="g-empty">セッションはまだありません。<button type="button" class="link-btn g-add" data-root="${esc(root || '')}">ここで始める</button></div>`;
+    const body = sessions.length ? sessions.map(rowHtml).join('') : `<div class="g-empty">${t("セッションはまだありません。")}<button type="button" class="link-btn g-add" data-root="${esc(root || '')}">${t("ここで始める")}</button></div>`;
     return `<details class="group${isActiveRepo ? ' active-repo' : ''}" data-key="${esc(key)}"${root ? ` data-root="${esc(root)}"` : ''}${open ? ' open' : ''}>
       <summary><span class="caret">▶</span><span class="g-name" title="${esc(title || name)}">${esc(name)}</span>${btns}<span class="g-count">${sessions.length || ''}</span></summary>
       ${body}
@@ -153,14 +154,14 @@
     }
     const byLast = (a, b) => (b.last > a.last ? 1 : b.last < a.last ? -1 : 0);
     let html = '';
-    if (live.length) html += `<section class="sb-section live"><h3>稼働中 <span>${live.length}</span></h3>${live.map(rowHtml).join('')}</section>`;
-    html += '<section class="sb-section"><h3><span>リポジトリ</span><button type="button" class="link-btn add-repo" title="ローカルのフォルダを取り込む / git clone">＋ 追加</button></h3>';
+    if (live.length) html += `<section class="sb-section live"><h3>${t("稼働中")} <span>${live.length}</span></h3>${live.map(rowHtml).join('')}</section>`;
+    html += t('<section class="sb-section"><h3><span>リポジトリ</span><button type="button" class="link-btn add-repo" title="ローカルのフォルダを取り込む / git clone">＋ 追加</button></h3>');
     const rg = [...repoGroups.values()].sort(byLast);
     for (const g of rg) html += groupHtml(g.key, g.name, g.sessions, { root: g.root, title: g.root, added: g.added });
-    if (!rg.length) html += `<div class="sb-empty">${q ? '一致するセッションはありません' : 'リポジトリに紐づくセッションはありません'}</div>`;
+    if (!rg.length) html += `<div class="sb-empty">${q ? t('一致するセッションはありません') : t('リポジトリに紐づくセッションはありません')}</div>`;
     html += '</section>';
     if (otherGroups.size) {
-      html += '<section class="sb-section"><h3>その他</h3>';
+      html += t('<section class="sb-section"><h3>その他</h3>');
       for (const g of [...otherGroups.values()].sort(byLast)) {
         const first = g.sessions[0];
         html += groupHtml(g.key, first.cwd || g.name || g.key, g.sessions, { root: first.cwd, title: first.cwd });
@@ -170,7 +171,7 @@
     $('#session-list').innerHTML = html;
     const busy = state.sessions.filter((s) => s.status === 'busy').length;
     const waiting = state.sessions.filter((s) => s.status === 'waiting').length;
-    $('#counts').innerHTML = [busy ? `<span class="c-busy">⚒ ${busy} 作業中</span>` : '', waiting ? `<span class="c-wait">✋ ${waiting} 判断待ち</span>` : '', `${state.sessions.length} 件`].filter(Boolean).join(' · ');
+    $('#counts').innerHTML = [busy ? `<span class="c-busy">⚒ ${busy} ${t("作業中")}</span>` : '', waiting ? `<span class="c-wait">✋ ${waiting} ${t("判断待ち")}</span>` : '', `${state.sessions.length} ${t("件")}`].filter(Boolean).join(' · ');
   }
 
   // --------------------------------------------------------- explorer
@@ -204,7 +205,7 @@
   function renderRepoSelect() {
     const sel = $('#explorer-repo');
     const choices = repoChoices();
-    sel.innerHTML = choices.map((c) => `<option value="${esc(c.root)}">${esc(c.name)}</option>`).join('') || '<option value="">（リポジトリなし）</option>';
+    sel.innerHTML = choices.map((c) => `<option value="${esc(c.root)}">${esc(c.name)}</option>`).join('') || t('<option value="">（リポジトリなし）</option>');
     if (state.activeRepo) sel.value = state.activeRepo;
     else if (choices.length) {
       // Nothing chosen yet: start with the repository of the most recent session.
@@ -213,14 +214,14 @@
     }
   }
   async function loadTree(root, { force = false } = {}) {
-    if (!root) { $('#repo-tree').innerHTML = '<div class="sb-empty">リポジトリを選んでください</div>'; return; }
+    if (!root) { $('#repo-tree').innerHTML = t('<div class="sb-empty">リポジトリを選んでください</div>'); return; }
     const t = sb.tree;
     if (!force && norm(t.root) === norm(root) && t.files) { renderTree(); return; }
     t.root = root;
     t.files = null;
     t.dirs = new Map();
     sb.expanded = new Set();
-    $('#repo-tree').innerHTML = '<div class="loading">読み込み中…</div>';
+    $('#repo-tree').innerHTML = t('<div class="loading">読み込み中…</div>');
     try {
       // Ask for both at once. The index gives the tracked files without walking the working
       // tree; the status (which walks it anyway) adds the untracked ones.
@@ -286,7 +287,7 @@
   function renderTree() {
     const t = sb.tree;
     const el = $('#repo-tree');
-    if (!t.root) { el.innerHTML = '<div class="sb-empty">リポジトリを選んでください</div>'; return; }
+    if (!t.root) { el.innerHTML = t('<div class="sb-empty">リポジトリを選んでください</div>'); return; }
     if (t.files === null) return; // still loading; loadTree renders when it is done
     if (!t.isGit) { renderPlainTree(); return; }
     const stMap = statusMap();
@@ -298,7 +299,7 @@
     const q = sb.treeFilter.trim().toLowerCase();
     if (q) {
       const hits = (t.files || []).filter((f) => f.toLowerCase().includes(q)).slice(0, 500);
-      el.innerHTML = hits.map((f) => fileNode(f, f, stMap)).join('') || '<div class="empty-note">該当なし</div>';
+      el.innerHTML = hits.map((f) => fileNode(f, f, stMap)).join('') || t('<div class="empty-note">該当なし</div>');
       return;
     }
     const tree = buildTree(t.files || []);
@@ -321,7 +322,7 @@
       for (const f of node.files.sort((a, b) => a.name.localeCompare(b.name))) h += fileNode(f.path, f.name, stMap);
       return h;
     };
-    el.innerHTML = render(tree) || '<div class="empty-note">ファイルがありません</div>';
+    el.innerHTML = render(tree) || t('<div class="empty-note">ファイルがありません</div>');
   }
   /// Show `rel` in the tree: expand its folders, select it, scroll to it.
   function reveal(rel, root) {
@@ -358,13 +359,13 @@
       }
       return h;
     };
-    el.innerHTML = (await render('')) || '<div class="empty-note">ファイルがありません</div>';
+    el.innerHTML = (await render('')) || t('<div class="empty-note">ファイルがありません</div>');
   }
 
   // -------------------------------------------------------------- git
   async function loadGit(root, { force = false } = {}) {
     const g = sb.git;
-    if (!root) { $('#git-body').innerHTML = '<div class="sb-empty">リポジトリを選んでください</div>'; return; }
+    if (!root) { $('#git-body').innerHTML = t('<div class="sb-empty">リポジトリを選んでください</div>'); return; }
     if (norm(g.root) !== norm(root)) { g.root = root; g.status = null; g.log = []; g.branches = []; g.selected = new Set(); renderGit(); }
     try {
       const [st, lg, br] = await Promise.all([
@@ -380,7 +381,7 @@
       if (norm(g.root) !== norm(root)) return;
       const notGit = /not a git/.test(e.message);
       $('#git-body').innerHTML = `<div class="git-head"><span class="branch" title="${esc(root)}">${esc(basename(root))}</span></div>${notGit
-        ? '<div class="empty-note">このフォルダは Git リポジトリではありません</div>'
+        ? t('<div class="empty-note">このフォルダは Git リポジトリではありません</div>')
         : `<div class="loading err">${esc(e.message)}</div>`}`;
     }
   }
@@ -388,41 +389,41 @@
     const g = sb.git;
     const st = g.status;
     const body = $('#git-body');
-    if (!g.root || !st) { body.innerHTML = g.root ? `<div class="git-head"><span class="branch">${esc(basename(g.root))}</span></div><div class="loading">読み込み中…</div>` : '<div class="sb-empty">リポジトリを選んでください</div>'; return; }
+    if (!g.root || !st) { body.innerHTML = g.root ? `<div class="git-head"><span class="branch">${esc(basename(g.root))}</span></div><div class="loading">${t("読み込み中…")}</div>` : t('<div class="sb-empty">リポジトリを選んでください</div>'); return; }
     const entries = st.entries || [];
     const all = entries.length && entries.every((e) => g.selected.has(e.path));
     const sync = [st.ahead ? `↑${st.ahead}` : '', st.behind ? `↓${st.behind}` : ''].filter(Boolean).join(' ');
     const name = state.repos.find((r) => norm(r.root) === norm(g.root))?.name || basename(g.root);
     body.innerHTML = `
-      <div class="git-head"><span class="branch" title="${esc(g.root)}">${esc(name)}</span><span class="chip">⎇ ${esc(st.detached ? 'HEAD' : st.branch || '?')}${st.upstream ? ` → ${esc(st.upstream)}` : ''}</span>${sync ? `<span class="chip" title="push 待ち ${st.ahead || 0} / pull 待ち ${st.behind || 0}">${sync}</span>` : ''}</div>
-      <div class="git-actions"><button type="button" class="btn small" data-git="refresh">更新</button><button type="button" class="btn small" data-git="pull">Pull</button><button type="button" class="btn small" data-git="push"${!st.ahead && st.upstream ? ' disabled' : ''}>Push</button><button type="button" class="btn small primary" data-git="commit"${entries.length ? '' : ' disabled'}>Commit…</button><button type="button" class="btn small" data-git="new">新しいセッション</button></div>
-      <div class="git-section"><h3 data-sec="changes"><span>変更 ${entries.length}</span><span class="caret">${g.open.changes ? '▾' : '▸'}</span></h3>${g.open.changes ? (entries.length ? `
-        <div class="list-head"><label><input type="checkbox" id="chg-all"${all ? ' checked' : ''}> すべて</label><span class="sel-count">${g.selected.size} 件選択</span><span class="spacer"></span><button type="button" class="link-btn" data-git="diff-all">すべての差分</button></div>
-        ${entries.map((e) => `<div class="lrow chg" data-path="${esc(e.path)}" draggable="true" title="${esc(e.path)}${e.staged ? '（ステージ済み）' : ''}${e.unstaged ? '（未ステージ）' : ''}"><input type="checkbox" class="chg-sel"${g.selected.has(e.path) ? ' checked' : ''}><span class="st">${esc(badgeFor(e) === 'Q' ? '?' : badgeFor(e))}</span><span class="lpath"><span>${esc(e.path)}</span></span></div>`).join('')}`
-        : `<div class="empty-note">作業ツリーに変更はありません${st.head ? `<br><span class="muted">HEAD ${esc(st.head)} ${esc(st.head_subject || '')}</span>` : ''}</div>`) : ''}</div>
-      <div class="git-section"><h3 data-sec="log"><span>ログ</span><span class="caret">${g.open.log ? '▾' : '▸'}</span></h3>${g.open.log ? (g.log.length ? g.log.map((c) => `<div class="lrow commit" data-hash="${esc(c.hash)}" data-subject="${esc(c.subject)}" title="${esc(c.author)} · ${esc(c.date)}"><span class="lhash">${esc(c.short)}</span><span class="lsub">${esc(c.subject)}</span><span class="lmeta">${esc(ago(c.date))}</span></div>`).join('') : '<div class="empty-note">コミットがありません</div>') : ''}</div>
-      <div class="git-section"><h3 data-sec="branches"><span>ブランチ</span><span class="caret">${g.open.branches ? '▾' : '▸'}</span></h3>${g.open.branches ? (g.branches.map((b) => `<div class="lrow"><span class="lhash">${b.current ? '●' : ' '}</span><span class="lsub">${esc(b.name)}</span><span class="lmeta">${b.upstream ? '→ ' + esc(b.upstream) : ''}</span></div>`).join('') || '<div class="empty-note">ブランチがありません</div>') : ''}</div>`;
+      <div class="git-head"><span class="branch" title="${esc(g.root)}">${esc(name)}</span><span class="chip">⎇ ${esc(st.detached ? 'HEAD' : st.branch || '?')}${st.upstream ? ` → ${esc(st.upstream)}` : ''}</span>${sync ? `<span class="chip" title="${t("push 待ち")} ${st.ahead || 0} ${t("/ pull 待ち")} ${st.behind || 0}">${sync}</span>` : ''}</div>
+      <div class="git-actions"><button type="button" class="btn small" data-git="refresh">${t("更新")}</button><button type="button" class="btn small" data-git="pull">Pull</button><button type="button" class="btn small" data-git="push"${!st.ahead && st.upstream ? ' disabled' : ''}>Push</button><button type="button" class="btn small primary" data-git="commit"${entries.length ? '' : ' disabled'}>Commit…</button><button type="button" class="btn small" data-git="new">${t("新しいセッション")}</button></div>
+      <div class="git-section"><h3 data-sec="changes"><span>${t("変更")} ${entries.length}</span><span class="caret">${g.open.changes ? '▾' : '▸'}</span></h3>${g.open.changes ? (entries.length ? `
+        <div class="list-head"><label><input type="checkbox" id="chg-all"${all ? ' checked' : ''}> ${t("すべて")}</label><span class="sel-count">${g.selected.size} ${t("件選択")}</span><span class="spacer"></span><button type="button" class="link-btn" data-git="diff-all">${t("すべての差分")}</button></div>
+        ${entries.map((e) => `<div class="lrow chg" data-path="${esc(e.path)}" draggable="true" title="${esc(e.path)}${e.staged ? t('（ステージ済み）') : ''}${e.unstaged ? t('（未ステージ）') : ''}"><input type="checkbox" class="chg-sel"${g.selected.has(e.path) ? ' checked' : ''}><span class="st">${esc(badgeFor(e) === 'Q' ? '?' : badgeFor(e))}</span><span class="lpath"><span>${esc(e.path)}</span></span></div>`).join('')}`
+        : `<div class="empty-note">${t("作業ツリーに変更はありません")}${st.head ? `<br><span class="muted">HEAD ${esc(st.head)} ${esc(st.head_subject || '')}</span>` : ''}</div>`) : ''}</div>
+      <div class="git-section"><h3 data-sec="log"><span>${t("ログ")}</span><span class="caret">${g.open.log ? '▾' : '▸'}</span></h3>${g.open.log ? (g.log.length ? g.log.map((c) => `<div class="lrow commit" data-hash="${esc(c.hash)}" data-subject="${esc(c.subject)}" title="${esc(c.author)} · ${esc(c.date)}"><span class="lhash">${esc(c.short)}</span><span class="lsub">${esc(c.subject)}</span><span class="lmeta">${esc(ago(c.date))}</span></div>`).join('') : t('<div class="empty-note">コミットがありません</div>')) : ''}</div>
+      <div class="git-section"><h3 data-sec="branches"><span>${t("ブランチ")}</span><span class="caret">${g.open.branches ? '▾' : '▸'}</span></h3>${g.open.branches ? (g.branches.map((b) => `<div class="lrow"><span class="lhash">${b.current ? '●' : ' '}</span><span class="lsub">${esc(b.name)}</span><span class="lmeta">${b.upstream ? '→ ' + esc(b.upstream) : ''}</span></div>`).join('') || t('<div class="empty-note">ブランチがありません</div>')) : ''}</div>`;
   }
   function commitDialog() {
     const g = sb.git;
     const entries = g.status?.entries || [];
     const sel = [...g.selected].filter((p) => entries.some((e) => e.path === p));
     modal({
-      title: 'コミット',
+      title: t('コミット'),
       body: `
-        <label class="field"><span>コミットメッセージ</span><textarea id="cm-msg" placeholder="変更の要約"></textarea></label>
-        <div class="field"><span>対象</span>
-          <label><input type="radio" name="cm-scope" value="selected"${sel.length ? ' checked' : ' disabled'}> 選択した ${sel.length} 件</label>
-          <label><input type="radio" name="cm-scope" value="all"${sel.length ? '' : ' checked'}> すべての変更（${entries.length} 件、git add -A）</label>
+        <label class="field"><span>${t("コミットメッセージ")}</span><textarea id="cm-msg" placeholder="${t("変更の要約")}"></textarea></label>
+        <div class="field"><span>${t("対象")}</span>
+          <label><input type="radio" name="cm-scope" value="selected"${sel.length ? ' checked' : ' disabled'}> ${t("選択した")} ${sel.length} ${t("件")}</label>
+          <label><input type="radio" name="cm-scope" value="all"${sel.length ? '' : ' checked'}> ${t("すべての変更（")}${entries.length} ${t("件、git add -A）")}</label>
         </div>
-        <p class="note">${esc(g.status?.branch || '')} に直接コミットします。push は別途行います。</p>`,
+        <p class="note">${esc(g.status?.branch || '')} ${t("に直接コミットします。push は別途行います。")}</p>`,
       actions: [
-        { label: 'キャンセル' },
+        { label: t('キャンセル') },
         {
-          label: 'コミット', primary: true,
+          label: t('コミット'), primary: true,
           onClick: async (card) => {
             const message = $('#cm-msg', card).value.trim();
-            if (!message) throw new Error('コミットメッセージを入力してください');
+            if (!message) throw new Error(t('コミットメッセージを入力してください'));
             const scope = $('input[name="cm-scope"]:checked', card)?.value || 'all';
             const r = await api.post('/api/git/commit', { root: g.root, message, paths: scope === 'selected' ? sel : [] });
             toast('コミットしました');
@@ -437,14 +438,14 @@
   }
   async function pushFlow() {
     const st = sb.git.status || {};
-    if (!(await confirmDialog('Push', `<code>${esc(st.branch || 'HEAD')}</code> を ${st.upstream ? `<code>${esc(st.upstream)}</code>` : '新しい上流（origin）'} へ push します。${st.ahead ? `未送信コミット ${st.ahead} 件。` : ''}`, { label: 'Push' }))) return;
+    if (!(await confirmDialog('Push', `<code>${esc(st.branch || 'HEAD')}</code> ${t("を")} ${st.upstream ? `<code>${esc(st.upstream)}</code>` : t('新しい上流（origin）')} ${t("へ push します。")}${st.ahead ? `${t("未送信コミット")} ${st.ahead} ${t("件。")}` : ''}`, { label: 'Push' }))) return;
     toast('push 中…');
     try { const r = await api.post('/api/git/push', { root: sb.git.root }); await loadGit(sb.git.root, { force: true }); showOutput('Push 結果', r.output); }
     catch (e) { showOutput('Push に失敗', e.message); }
   }
   async function pullFlow() {
     const st = sb.git.status || {};
-    if (!(await confirmDialog('Pull', `<code>${esc(st.upstream || '上流')}</code> から fast-forward で取り込みます（git pull --ff-only）。`, { label: 'Pull' }))) return;
+    if (!(await confirmDialog('Pull', `<code>${esc(st.upstream || t('上流'))}</code> ${t("から fast-forward で取り込みます（git pull --ff-only）。")}`, { label: 'Pull' }))) return;
     toast('pull 中…');
     try { const r = await api.post('/api/git/pull', { root: sb.git.root }); await loadGit(sb.git.root, { force: true }); showOutput('Pull 結果', r.output); bus.emit('files-changed', { root: sb.git.root }); }
     catch (e) { showOutput('Pull に失敗', e.message); }
@@ -455,7 +456,7 @@
     sb.refreshTimer = setTimeout(() => loadGit(state.activeRepo, { force: true }), 1500);
   }
   async function removeRepo(root) {
-    if (!(await confirmDialog('一覧から外す', `<code>${esc(root)}</code> を一覧から外します。フォルダやファイルは消えません。`, { label: '外す' }))) return;
+    if (!(await confirmDialog(t('一覧から外す'), `<code>${esc(root)}</code> ${t("を一覧から外します。フォルダやファイルは消えません。")}`, { label: t('外す') }))) return;
     try { const r = await api.post('/api/repos/remove', { path: root }); state.repos = r.repos || state.repos; bus.emit('repos', state.repos); renderSessions(); }
     catch (e) { toast(e.message); }
   }
@@ -510,7 +511,7 @@
     $('#explorer-repo').addEventListener('change', (e) => OY.setActiveRepo(e.target.value));
     $('#explorer-refresh').addEventListener('click', () => { loadTree(state.activeRepo, { force: true }); loadGit(state.activeRepo, { force: true }); });
     $('#explorer-add').addEventListener('click', () => OY.addRepoDialog());
-    $('#tree-compact').addEventListener('click', () => { sb.compact = !sb.compact; LS.set('sb.compact', sb.compact); paintTreeTools(); renderTree(); toast(sb.compact ? '中身が 1 つだけのフォルダをまとめて表示します' : 'フォルダを 1 階層ずつ表示します'); });
+    $('#tree-compact').addEventListener('click', () => { sb.compact = !sb.compact; LS.set('sb.compact', sb.compact); paintTreeTools(); renderTree(); toast(sb.compact ? t('中身が 1 つだけのフォルダをまとめて表示します') : t('フォルダを 1 階層ずつ表示します')); });
     $('#tree-collapse').addEventListener('click', () => { sb.expanded = new Set(); renderTree(); });
     $('#tree-filter').addEventListener('input', (e) => { sb.treeFilter = e.target.value; renderTree(); });
     const tree = $('#repo-tree');
@@ -543,7 +544,7 @@
       const all = e.target.closest('#chg-all');
       if (all) { sb.git.selected = all.checked ? new Set((sb.git.status?.entries || []).map((x) => x.path)) : new Set(); renderGit(); return; }
       const sel = e.target.closest('.chg-sel');
-      if (sel) { const p = sel.closest('.chg').dataset.path; if (sel.checked) sb.git.selected.add(p); else sb.git.selected.delete(p); const c = $('.sel-count', git); if (c) c.textContent = `${sb.git.selected.size} 件選択`; return; }
+      if (sel) { const p = sel.closest('.chg').dataset.path; if (sel.checked) sb.git.selected.add(p); else sb.git.selected.delete(p); const c = $('.sel-count', git); if (c) c.textContent = `${sb.git.selected.size} ${t("件選択")}`; return; }
       const chg = e.target.closest('.chg');
       if (chg) { OY.editors.openDiff(sb.git.root, chg.dataset.path); return; }
       const c = e.target.closest('.commit');
@@ -552,7 +553,7 @@
     git.addEventListener('dragstart', (e) => {
       const chg = e.target.closest('.chg');
       if (!chg) return;
-      e.dataTransfer.setData('text/oy-open', JSON.stringify({ kind: 'diff', key: `diff:${norm(sb.git.root)}:${chg.dataset.path}:0`, title: basename(chg.dataset.path) + ' 差分', icon: '±', data: { root: sb.git.root, rel: chg.dataset.path, staged: false } }));
+      e.dataTransfer.setData('text/oy-open', JSON.stringify({ kind: 'diff', key: `diff:${norm(sb.git.root)}:${chg.dataset.path}:0`, title: basename(chg.dataset.path) + t(' 差分'), icon: '±', data: { root: sb.git.root, rel: chg.dataset.path, staged: false } }));
     });
 
     bus.on('sessions', () => { renderSessions(); renderRepoSelect(); if (!sb.tree.root && state.activeRepo) { loadTree(state.activeRepo); loadGit(state.activeRepo); } });

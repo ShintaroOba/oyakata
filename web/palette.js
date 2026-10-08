@@ -77,7 +77,7 @@
   function render(foot = '') {
     list.innerHTML = items.length
       ? items.map((it, i) => `<div class="pal-item${i === sel ? ' sel' : ''}" data-i="${i}"><span class="pi-icon">${it.icon || ''}</span><span class="pi-main"><span class="pi-label">${it.labelHtml || esc(it.label)}</span>${it.detail ? `<span class="pi-detail">${it.detailHtml || esc(it.detail)}</span>` : ''}${it.hint ? `<span class="pi-hint">${esc(it.hint)}</span>` : ''}</span>${it.right ? `<span class="pi-right">${esc(it.right)}</span>` : ''}</div>`).join('')
-      : `<div class="pal-empty">${esc(foot || '該当なし')}</div>`;
+      : `<div class="pal-empty">${esc(foot || t('該当なし'))}</div>`;
     $('.pal-foot', el).textContent = items.length ? foot : '';
   }
   function close() {
@@ -106,9 +106,9 @@
     refresh();
   }
   /// Open in a mode by prefix: '' files, '>' commands, ':' line, '@' sessions.
-  function open(prefix = '') { fixed = null; show(prefix, ''); input.placeholder = 'ファイル名で検索（> コマンド  : 行へ移動  @ セッション）'; }
+  function open(prefix = '') { fixed = null; show(prefix, ''); input.placeholder = t('ファイル名で検索（> コマンド  : 行へ移動  @ セッション）'); }
   /// Use the palette as a picker over fixed items.
-  function pick({ title, items: list2, placeholder = '絞り込む' }) { fixed = { items: list2 }; show('', title); input.placeholder = placeholder; }
+  function pick({ title, items: list2, placeholder = t('絞り込む') }) { fixed = { items: list2 }; show('', title); input.placeholder = placeholder; }
 
   function refresh() { inflight = doRefresh(); return inflight; }
   async function doRefresh() {
@@ -120,16 +120,16 @@
       render();
       return;
     }
-    if (v.startsWith('>')) { items = commandItems(v.slice(1).trim()); render('コマンドが見つかりません'); return; }
-    if (v.startsWith(':')) { items = lineItems(v.slice(1).trim()); render('ファイルを開いていると、行番号で移動できます'); return; }
-    if (v.startsWith('@')) { items = sessionItems(v.slice(1).trim()); render('セッションが見つかりません'); return; }
+    if (v.startsWith('>')) { items = commandItems(v.slice(1).trim()); render(t('コマンドが見つかりません')); return; }
+    if (v.startsWith(':')) { items = lineItems(v.slice(1).trim()); render(t('ファイルを開いていると、行番号で移動できます')); return; }
+    if (v.startsWith('@')) { items = sessionItems(v.slice(1).trim()); render(t('セッションが見つかりません')); return; }
     const root = state.activeRepo;
-    if (!root) { items = []; render('リポジトリを選んでください'); return; }
+    if (!root) { items = []; render(t('リポジトリを選んでください')); return; }
     let files;
-    try { files = await OY.code.files(root); } catch (e) { if (my === seq) { items = []; render(e.message.includes('not a git') ? 'Git リポジトリではないため、ファイル検索は使えません' : e.message); } return; }
+    try { files = await OY.code.files(root); } catch (e) { if (my === seq) { items = []; render(e.message.includes('not a git') ? t('Git リポジトリではないため、ファイル検索は使えません') : e.message); } return; }
     if (my !== seq) return;
     items = fileItems(files, v.trim(), root);
-    render(`${OY.state.repos.find((r) => norm(r.root) === norm(root))?.name || basename(root)} · ${files.length.toLocaleString()} ファイル`);
+    render(`${OY.state.repos.find((r) => norm(r.root) === norm(root))?.name || basename(root)} · ${files.length.toLocaleString()} ${t("ファイル")}`);
   }
   function rankBy(arr, q, text, limit) {
     if (!q) return arr.slice(0, limit);
@@ -162,7 +162,7 @@
     if (!q) {
       const recent = mru(root).filter((f) => files.includes(f));
       const shown = recent.length ? recent : files.slice(0, 40);
-      return shown.map((f) => ({ ...mk(f), right: recent.length ? '最近' : '' }));
+      return shown.map((f) => ({ ...mk(f), right: recent.length ? t('最近') : '' }));
     }
     const scored = [];
     const hasSlash = q.includes('/');
@@ -196,8 +196,8 @@
     if (t?.desc?.kind !== 'file' || !t.inst?.reveal) return [];
     const n = parseInt(q, 10);
     const total = t.inst.lineCount?.() || 0;
-    if (!n) return [{ icon: '↧', label: `行番号を入力（1〜${total}）`, run: () => {}, keep: true }];
-    return [{ icon: '↧', label: `${n} 行目へ移動`, detail: t.desc.title, run: () => { const loc = OY.code.here(); if (loc) OY.code.jump({ ...loc, line: Math.min(n, total || n), col: 1 }); } }];
+    if (!n) return [{ icon: '↧', label: `${t("行番号を入力（1〜")}${total}）`, run: () => {}, keep: true }];
+    return [{ icon: '↧', label: `${n} ${t("行目へ移動")}`, detail: t.desc.title, run: () => { const loc = OY.code.here(); if (loc) OY.code.jump({ ...loc, line: Math.min(n, total || n), col: 1 }); } }];
   }
   function sessionItems(q) {
     const list2 = state.sessions.filter((s) => s.user_turns > 0 || s.status !== 'ended').map((s) => ({

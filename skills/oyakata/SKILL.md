@@ -1,56 +1,86 @@
 ---
 name: oyakata
-description: "OYAKATA（親方）— リポジトリ横断で Claude Code のセッションを一覧・閲覧・追従し、ブラウザから指示も送れる司令塔画面を開く。「oyakata を開いて」「ブラウザで見たい」「セッション一覧」「他のリポジトリの Claude は何してる」「ターミナルだと読みづらい」「図で見たい」などで使う。開いた後の応答は図を Mermaid で書く。"
+description: "OYAKATA (親方) — open the browser command post that lists, follows and drives coding-agent sessions (Claude Code, Codex CLI, Gemini CLI, Copilot CLI, OpenCode) across repositories, and lets the user send instructions from the browser. Use when the user says things like 'open oyakata', 'show this in the browser', 'list my sessions', 'what are the other agents doing', 'this is hard to read in the terminal', or 'show me a diagram' — or in Japanese 「oyakata を開いて」「ブラウザで見たい」「セッション一覧」「他のリポジトリの Claude は何してる」「ターミナルだと読みづらい」「図で見たい」. After opening it, write diagrams as Mermaid."
 allowed-tools: Bash(oyakata:*)
 argument-hint: "[session-id]"
 ---
 
 # OYAKATA
 
-ブラウザ上の司令塔。`~/.claude/projects` にある全セッションをリポジトリ別に並べ、稼働中のセッションの出力を 1 秒おきに追従して、Markdown・Mermaid・コードハイライト付きで表示する。リポジトリのファイルツリーと Git の差分、Claude が編集したファイル、作ったアーティファクトも同じ画面の右パネルで開ける。
+A browser-based command post. It indexes every session of every supported agent on this
+machine (Claude Code under `~/.claude`, Codex CLI, Gemini CLI, Copilot CLI, OpenCode),
+groups them by repository, follows running ones every second, and renders their output as
+HTML with Markdown, Mermaid diagrams and syntax-highlighted code. The repository's file
+tree, Git diffs, the files the agent edited and any artifacts open in the same window.
 
-## Step 1: 起動する
+## Step 1: open it
 
-`oyakata` は常駐プロセスを自分で立ち上げ、ブラウザを開いてすぐ戻る（ブロックしない）。既に動いていればブラウザを開くだけなので、何度呼んでもよい。
+`oyakata` starts its own background daemon, opens the browser and returns right away (it
+does not block). If the daemon is already running it only opens the browser, so calling it
+repeatedly is fine.
 
 ```bash
-oyakata                      # 引数なし: 今のセッションがブラウザで最初に開く
-oyakata --focus <session-id> # 引数あり: そのセッションを開く
+oyakata                      # no argument: the current session opens first
+oyakata --focus <session-id> # open that session
 ```
 
-`$ARGUMENTS` が空なら 1 行目、セッション ID が渡されていれば 2 行目を実行する。`run_in_background` は不要。
+Run the first line when `$ARGUMENTS` is empty, the second when a session id was given.
+`run_in_background` is not needed.
 
-標準出力の `OYAKATA is open at http://127.0.0.1:4848/...` の URL を、そのままユーザーに伝える。
+Tell the user the URL from stdout (`OYAKATA is open at http://127.0.0.1:4848/...`) as is.
 
-`oyakata: command not found` の場合は、同梱のスクリプトで GitHub Releases のビルド済みバイナリを入れる（Rust は不要）。別のコマンドを推測で試さない。
+If the command is not found (`oyakata: command not found`), install the prebuilt binary
+with the bundled script (no Rust toolchain needed). Do not guess other commands.
 
 ```bash
 # macOS / Linux
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/install.sh"
-# Windows（Bash ツールは Git Bash なので、そこから PowerShell を呼ぶ）
+# Windows (the Bash tool is Git Bash, so call PowerShell from it)
 powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}/scripts/install.ps1"
 ```
 
-- スクリプトは最後に `Installed: <パス>` と出す。このセッションの PATH には反映されないので、以降はそのパスで実行する（新しいターミナルからは `oyakata` で呼べる）。
-- `${CLAUDE_PLUGIN_ROOT}` が展開されていない（プラグインではなく `~/.claude/skills` に置かれている）場合は、同じスクリプトを GitHub から取る: `curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.sh | sh`（Windows: `irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex`）。
-- Rust がある環境なら `cargo install --git https://github.com/ShintaroOba/oyakata` でもよい。
+- The script ends with `Installed: <path>`. The current shell's PATH does not pick it up,
+  so use that path instead of `oyakata` for the rest of this session (new terminals can
+  call `oyakata`).
+- When `${CLAUDE_PLUGIN_ROOT}` is not expanded (the skill was installed into a skills
+  directory rather than as a Claude Code plugin), fetch the same script from GitHub:
+  `curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.sh | sh`
+  (Windows: `irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex`).
+- With a Rust toolchain, `cargo install --git https://github.com/ShintaroOba/oyakata` also works.
 
-## Step 2: 以降の応答は「ブラウザで読まれる」前提で書く
+## Step 2: write for the browser from now on
 
-OYAKATA が開いている間、このセッションの応答は HTML として描画される。次に従う。
+While OYAKATA is open, this session's replies are rendered as HTML. Follow these rules.
 
-- 図は必ず ```` ```mermaid ```` フェンスで書く（flowchart / sequenceDiagram / classDiagram / stateDiagram-v2 / erDiagram / gantt / mindmap）。ASCII アートや罫線文字で図を描かない。
-- 比較や一覧は Markdown の表にする。
-- 長い説明は `##` 見出しで区切る。
-- コードブロックには言語名を付ける（```` ```rust ````、```` ```bash ````、```` ```json ```` など）。
-- ターミナル向けの幅合わせ（全角スペース、罫線での枠）はしない。
-- ファイルを編集したら、応答の最後に編集したファイルのパスを列挙する（OYAKATA の「変更ファイル」から開ける）。
+- Diagrams go in ```` ```mermaid ```` fences (flowchart / sequenceDiagram / classDiagram /
+  stateDiagram-v2 / erDiagram / gantt / mindmap). Never draw diagrams in ASCII art or box
+  characters.
+- Comparisons and lists of options go in Markdown tables.
+- Split long explanations with `##` headings.
+- Give code blocks a language (```` ```rust ````, ```` ```bash ````, ```` ```json ```` …).
+- No terminal-style alignment (full-width spaces, ruled boxes).
+- After editing files, end the reply with the list of edited paths (OYAKATA's "changed
+  files" menu opens them).
 
-## ユーザーに聞かれたときの説明
+## When the user asks how it works
 
-- ブラウザの入力欄から指示を送れるのは、OYAKATA が起動したセッション（画面の「＋」でフォルダを選んで開く空のチャット、ターミナルの `oyakata new "指示"`、または終了済みセッションへの送信 / `oyakata attach --resume <id>`。権限モードは auto で始まる。作業中でも送れて、次のツール呼び出しの区切りで Claude に渡る）と、ターミナルで `claude` を直接起動したセッション（Windows のみ）。後者は「ターミナルへ送信」でそのターミナルに打ち込んで Enter を押す仕組みなので、権限の確認や質問にはターミナル側で答える。IDE 拡張や SDK から動いているセッションには送れない。
-- OYAKATA が持つセッションは、ターミナルからも `oyakata attach <id>` で同じ会話に入力できる（ブラウザと併用可）。`/quit` で端末だけ離脱、`/stop` でセッション終了。
-- 常駐を長く使うなら、Claude の中ではなくターミナルで `oyakata` を実行して立てるよう案内する。Claude の中から立てた常駐は、その Claude セッションの終了に巻き込まれることがある。
-- OYAKATA が起動したセッションでは、権限の確認と AskUserQuestion の回答もブラウザで行う。
-- `oyakata status` で常駐の確認、`oyakata stop` で停止。停止すると OYAKATA が起動したセッションも終わるが、会話は残るので `claude --resume <id>` で続けられる。
-- 画面はファイル変更を 1 秒ごとに検知して自動更新される。ユーザーにリロードを頼む必要はない。
+- The browser can send instructions to sessions OYAKATA started (the "＋" button picks a
+  folder and an agent and opens an empty chat; `oyakata new "prompt"` from a terminal; or
+  sending to an ended session, which OYAKATA resumes — `oyakata attach --resume <id>` does
+  the same from a terminal). Claude Code sessions take prompts mid-turn and show permission
+  prompts in the chat; the other agents run one turn per prompt and take the next prompt
+  when the turn ends. Sessions started with `claude` directly in a terminal can also be
+  typed into (Windows only): "Send to terminal" types into that console, so permission
+  prompts and questions are answered in the terminal. Sessions running in an IDE
+  extension or the SDK cannot be driven.
+- A session OYAKATA owns can also be typed into from a terminal with `oyakata attach <id>`
+  (alongside the browser). `/quit` detaches the terminal, `/stop` ends the session.
+- For long-running use, suggest starting the daemon from a terminal (`oyakata`) rather
+  than from inside an agent session: a daemon started inside one can be taken down when
+  that session exits.
+- `oyakata status` shows whether the daemon runs, `oyakata stop` stops it. Stopping also
+  ends sessions OYAKATA started, but their conversations remain and can be resumed.
+- The screen refreshes itself every second; the user never needs to reload.
+- Other agents are detected automatically from their data folders (`~/.codex`,
+  `~/.gemini`, `~/.copilot`, OpenCode's database); which ones are shown, and the UI
+  language (Japanese / English), are in the browser's Settings.

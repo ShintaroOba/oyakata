@@ -554,7 +554,7 @@ details.tool.err .tool-result { background: var(--err-soft); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .modal-card pre.out { background: var(--code-bg); padding: 10px 12px; border-radius: 8px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow: auto; }
 .modal-card .note { font-size: 12px; color: var(--fg-muted); }
-.settings { position: fixed; left: 12px; top: 48px; width: 320px; }
+.settings { position: fixed; left: 12px; top: 48px; width: 320px; max-height: calc(100vh - 60px); overflow-y: auto; }
 .settings h3 { margin: 4px 8px 8px; font-size: 13px; }
 .settings .field { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px; font-size: 13px; }
 .settings .field.check { justify-content: flex-start; cursor: pointer; }
@@ -752,3 +752,19 @@ table.keys td:first-child { white-space: nowrap; width: 1%; }
   .transcript { padding: 10px 14px 30px 12px; }
   .sl-mode .kh, .sl-hint { display: none; }
 }
+
+/* ---- agents (Codex / Gemini / Copilot / OpenCode) ---- */
+.chip.agent { border-style: dashed; color: var(--fg); background: transparent; }
+.ch-agent { flex: none; margin-left: 2px; }
+.ns-agents { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; }
+.ns-agent { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-elev); color: var(--fg-muted); cursor: pointer; }
+.ns-agent:hover { color: var(--fg); }
+.ns-agent.sel { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.popover .pinput { padding: 6px 10px 8px; }
+.popover .pinput input { width: 100%; box-sizing: border-box; font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); }
+.settings .field.agents { align-items: flex-start; }
+.agents-list { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.agents-list label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.lang-dialog .lang-btns { display: flex; gap: 12px; justify-content: center; padding: 10px 0 4px; }
+.lang-dialog .btn.big { font-size: 16px; padding: 12px 28px; }
+.ns-agent:disabled { opacity: 0.45; cursor: not-allowed; }

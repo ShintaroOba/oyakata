@@ -2,7 +2,7 @@
   "name": "oyakata",
   "displayName": "OYAKATA",
   "version": "0.1.0",
-  "description": "親方: Claude Code のセッションをリポジトリ横断でブラウザから見渡し、指示を送る司令塔。/oyakata で開く。本体の oyakata コマンドが無ければ、同梱のスクリプトが GitHub Releases のビルド済みバイナリを入れる（Rust 不要）",
+  "description": "OYAKATA (親方): a browser command post for coding-agent sessions (Claude Code, Codex CLI, Gemini CLI, Copilot CLI, OpenCode) across repositories — list, follow and drive them from the browser, in Japanese or English. /oyakata opens it; the bundled script installs the prebuilt binary when missing (no Rust needed).",
   "author": {
     "name": "Shintaro Oba",
     "url": "https://github.com/ShintaroOba"

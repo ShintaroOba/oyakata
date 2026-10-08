@@ -8,7 +8,7 @@
   const {
     $, $$, esc, api, state, bus, md, toast, sessionTitle, statusLabel, stripCwd, fmtTokens, fmtDuration, shortModel, buildRange,
     observeMermaid, bindTranscript, TOOL_ICON, toolInputHtml, MODELS, EFFORTS, MODES, MODE_CYCLE, DEFAULT_MODE, copyText, relTo,
-    contextWindow, craftVerb, doneWord, greeting, basename, isPrompt, repoOfCwd,
+    contextWindow, craftVerb, doneWord, greeting, basename, isPrompt, repoOfCwd, agentInfo, agentLabel,
   } = OY;
 
   const INITIAL_WINDOW = 300;
@@ -20,8 +20,9 @@
       <span class="st-dot" title=""></span>
       <h2 class="chat-title"></h2>
       <span class="ch-repo"></span>
-      <button type="button" class="head-btn b-team" data-pop hidden title="体制図: サブエージェントの構成と、それぞれの役割・作業状況">👥 <span class="n"></span></button>
-      <button type="button" class="head-btn b-more" data-pop title="メニュー">⋯</button>
+      <span class="ch-agent chip tiny agent" hidden></span>
+      <button type="button" class="head-btn b-team" data-pop hidden title="${t("体制図: サブエージェントの構成と、それぞれの役割・作業状況")}">👥 <span class="n"></span></button>
+      <button type="button" class="head-btn b-more" data-pop title="${t("メニュー")}">⋯</button>
       <div class="popover pop-menu" hidden></div>
       <div class="popover pop-outline" hidden></div>
       <div class="popover pop-files" hidden></div>
@@ -30,12 +31,12 @@
     <div class="chat-body">
       <button type="button" class="turn-ribbon" hidden></button>
       <div class="chat-scroller">
-        <div class="load-more" hidden><button type="button" class="btn">さらに前を表示</button></div>
+        <div class="load-more" hidden><button type="button" class="btn">${t("さらに前を表示")}</button></div>
         <div class="transcript"></div>
         <div class="welcome" hidden></div>
       </div>
       <div class="turn-rail" hidden></div>
-      <button type="button" class="jump-latest" hidden>新しい出力 ↓</button>
+      <button type="button" class="jump-latest" hidden>${t("新しい出力 ↓")}</button>
     </div>
     <div class="composer">
       <div class="pending-cards"></div>
@@ -44,7 +45,7 @@
       <div class="prompt-box">
         <span class="prompt-glyph">&gt;</span>
         <textarea rows="1" spellcheck="false"></textarea>
-        <button type="button" class="send-btn" title="送信（Enter）">↵</button>
+        <button type="button" class="send-btn" title="${t("送信（Enter）")}">↵</button>
       </div>
       <div class="statusline">
         <button type="button" class="sl-mode" data-pop></button>
@@ -65,6 +66,7 @@
       this.items = [];
       this.agents = [];
       this.session = state.byId.get(id) || null;
+      this.agent = this.session?.agent || data.agent || 'claude';
       this.run = null;
       // Choices for a draft or a resumed session; a running one takes them from Claude Code.
       this.opts = { model: '', mode: DEFAULT_MODE, effort: '' };
@@ -109,6 +111,27 @@
 
     cwd() { return this.session?.cwd || this.draftCwd; }
     isDraft() { return !this.session && !!this.draftCwd; }
+    /// The agent's display name, for message headers and hints.
+    who() { return agentLabel(this.agent); }
+    agentCfg() { return agentInfo(this.agent) || {}; }
+    /// Only Claude Code asks for permissions and takes prompts mid-turn; the others run a
+    /// turn per process and get the next prompt when it ends.
+    interactive() { return this.agent === 'claude'; }
+    /// Agents that assign their own session id answer `run/start` with it: move this chat
+    /// (and its tab) over to that id.
+    rekey(newId) {
+      if (!newId || newId === this.id) return;
+      const oldKey = this.key;
+      instances.delete(this.id);
+      state.openChats.delete(this.id);
+      this.id = newId;
+      this.key = 'chat:' + newId;
+      instances.set(newId, this);
+      state.openChats.add(newId);
+      OY.wb.rekey(oldKey, this.key, { id: newId, agent: this.agent });
+      const s = state.byId.get(newId);
+      if (s) { this.session = s; this.lastStatus = s.status; }
+    }
 
     // ------------------------------------------------------------ loading
     async load() {
@@ -127,13 +150,13 @@
           return;
         }
       }
-      this.transcript.innerHTML = '<div class="loading">読み込み中…</div>';
+      this.transcript.innerHTML = t('<div class="loading">読み込み中…</div>');
       let data;
       try {
         data = await api.get(`/api/sessions/${encodeURIComponent(this.id)}`);
       } catch (e) {
         if (seq !== this.loadSeq) return;
-        this.transcript.innerHTML = `<div class="loading err">読み込みに失敗しました: ${esc(e.message)}</div>`;
+        this.transcript.innerHTML = `<div class="loading err">${t("読み込みに失敗しました:")} ${esc(e.message)}</div>`;
         return;
       }
       if (seq !== this.loadSeq) return;
@@ -155,16 +178,16 @@
       const name = repo?.name || basename(cwd || '');
       const starting = this.starting || (this.session && this.session.status !== 'ended');
       w.innerHTML = `<img class="brand-mark big" src="/assets/icon.svg" alt="">
-        <div class="wl-greet">${starting ? (state.whimsy ? '承知しました。取りかかります…' : '開始しています…') : esc(greeting())}</div>
+        <div class="wl-greet">${starting ? (state.whimsy ? t('承知しました。取りかかります…') : t('開始しています…')) : esc(greeting())}</div>
         <div class="wl-where"><span class="wl-repo">📁 ${esc(name)}</span><span class="wl-branch"></span><div class="wl-path">${esc(cwd || '')}</div></div>
         ${this.pendingPrompt ? `<div class="msg user"><div class="bubble">${esc(this.pendingPrompt)}</div></div>` : ''}
-        ${starting ? '' : '<div class="wl-tips"><kbd>Enter</kbd> 送信 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 改行 · <kbd>Shift</kbd>+<kbd>Tab</kbd> 権限モード · <kbd>Esc</kbd> 中断</div>'}`;
+        ${starting ? '' : t('<div class="wl-tips"><kbd>Enter</kbd> 送信 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 改行 · <kbd>Shift</kbd>+<kbd>Tab</kbd> 権限モード · <kbd>Esc</kbd> 中断</div>')}`;
       w.hidden = false;
       const root = repo?.root;
       if (root) {
         api.get(`/api/git/status?root=${encodeURIComponent(root)}`).then((st) => {
           const b = $('.wl-branch', w);
-          if (b && st.branch) b.textContent = `⎇ ${st.branch}${st.entries?.length ? ` · 変更 ${st.entries.length}` : ''}`;
+          if (b && st.branch) b.textContent = `⎇ ${st.branch}${st.entries?.length ? ` ${t("· 変更")} ${st.entries.length}` : ''}`;
         }).catch(() => {});
       }
     }
@@ -190,6 +213,7 @@
       if (!s) return;
       const was = this.lastStatus;
       this.session = s;
+      if (s.agent) this.agent = s.agent;
       if (was === 'busy' && s.status === 'idle') this.flashDone();
       this.lastStatus = s.status;
       if (s.owner === 'oyakata') this.starting = false;
@@ -255,8 +279,8 @@
       if (this.starting && !s) { set('busy', '✻', `${craftVerb(0)}…`, '', ''); return; }
       if (!s || (s.status !== 'busy' && s.status !== 'waiting')) { el.hidden = true; return; }
       if (s.status === 'waiting') {
-        const what = s.waiting_for ? s.waiting_for.replace(/^permission: /, '').replace(/^question$/, '質問') : '';
-        set('waiting', '✋', state.whimsy ? '親方の判断待ち' : '確認待ち', what, s.owner === 'terminal' ? '（ターミナルで答えてください）' : '');
+        const what = s.waiting_for ? s.waiting_for.replace(/^permission: /, '').replace(/^question$/, t('質問')) : '';
+        set('waiting', '✋', state.whimsy ? t('親方の判断待ち') : t('確認待ち'), what, s.owner === 'terminal' ? t('（ターミナルで答えてください）') : '');
         return;
       }
       const t = this.turnStart();
@@ -266,22 +290,26 @@
         if (it.t === 'tool' && !it.result) { detail = `${it.name}: ${stripCwd(it.summary, this.cwd())}`; break; }
         if (it.t === 'text' || isPrompt(it)) break;
       }
+      if (!detail && s.owner === 'oyakata' && this.run?.last_tool) detail = stripCwd(this.run.last_tool, this.cwd());
       const secs = t.ts ? (Date.now() - new Date(t.ts).getTime()) / 1000 : null;
       const canInterrupt = s.owner === 'oyakata' || (s.owner === 'terminal' && s.live?.typeable && state.config.can_type !== false);
       const queued = s.owner === 'oyakata' ? (this.run?.queued?.length || 0) : 0;
-      const meta = [secs != null ? fmtDuration(secs) : '', queued ? `指示 ${queued} 件待機中` : '', canInterrupt ? 'esc で中断' : ''].filter(Boolean).join(' · ');
+      const meta = [secs != null ? fmtDuration(secs) : '', queued ? `${t("指示")} ${queued} ${t("件待機中")}` : '', canInterrupt ? t('esc で中断') : ''].filter(Boolean).join(' · ');
       set('busy', '✻', `${craftVerb(t.idx)}…`, detail, meta ? `(${meta})` : '');
     }
 
     // ------------------------------------------------------------- header
     renderHeader() {
       const s = this.session;
-      const title = s ? sessionTitle(s) : '新しいセッション';
-      this.q('.chat-title').textContent = s?.title === '（開始中）' && this.pendingPrompt ? this.pendingPrompt.slice(0, 60) : title;
+      const title = s ? sessionTitle(s) : t('新しいセッション');
+      this.q('.chat-title').textContent = s?.title === t('（開始中）') && this.pendingPrompt ? this.pendingPrompt.slice(0, 60) : title;
       const status = s?.status || (this.isDraft() ? 'draft' : 'ended');
       const dot = this.q('.st-dot');
       dot.className = 'st-dot ' + status;
-      dot.title = this.isDraft() ? '未開始' : `${statusLabel(s?.status)}${s?.owner === 'oyakata' ? '（OYAKATA が実行）' : s?.owner === 'terminal' ? '（ターミナルで実行）' : ''}`;
+      dot.title = this.isDraft() ? t('未開始') : `${statusLabel(s?.status)}${s?.owner === 'oyakata' ? t('（OYAKATA が実行）') : s?.owner === 'terminal' ? t('（ターミナルで実行）') : s?.owner === 'external' ? t('（別のプロセスで実行）') : ''}`;
+      const agentEl = this.q('.ch-agent');
+      agentEl.hidden = this.agent === 'claude';
+      agentEl.textContent = this.who();
       const repo = s?.repo || repoOfCwd(this.cwd());
       const r = this.q('.ch-repo');
       r.textContent = repo?.name ? repo.name + (repo.subdir ? '/' + repo.subdir : '') : basename(this.cwd() || '');
@@ -310,15 +338,15 @@
       const s = this.session;
       const row = (act, icon, label, extra = '', cls = '') => `<a href="#" data-act="${act}" class="${cls}"><span class="mi">${icon}</span><span class="ml">${label}</span>${extra}</a>`;
       let h = '';
-      h += row('outline', '🧭', 'プロンプト一覧');
-      if (s?.edited_files?.length) h += row('files', '📝', '変更したファイル', `<span class="mc">${s.edited_files.length}</span>`);
-      if (s?.artifacts?.length) h += row('artifacts', '🧩', 'アーティファクト', `<span class="mc">${s.artifacts.length}</span>`);
-      if (s?.subagents) h += row('team', '👥', '体制図', `<span class="mc">${s.subagents}</span>`);
-      h += row('logs', state.showLogs ? '🙈' : '👁', state.showLogs ? '作業ログを隠す' : '作業ログを表示');
-      h += row('tree', '🌲', 'このリポジトリのツリーと Git');
-      if (s) h += row('copy-id', '📋', 'セッション ID をコピー');
-      if (s?.owner === 'oyakata') h += '<div class="msep"></div>' + row('end', '⏹', 'セッションを終了', '', 'danger');
-      if (s) h += (s.owner === 'oyakata' ? '' : '<div class="msep"></div>') + row('delete', '🗑', 'セッションを削除', '', 'danger');
+      h += row('outline', '🧭', t('プロンプト一覧'));
+      if (s?.edited_files?.length) h += row('files', '📝', t('変更したファイル'), `<span class="mc">${s.edited_files.length}</span>`);
+      if (s?.artifacts?.length) h += row('artifacts', '🧩', t('アーティファクト'), `<span class="mc">${s.artifacts.length}</span>`);
+      if (s?.subagents) h += row('team', '👥', t('体制図'), `<span class="mc">${s.subagents}</span>`);
+      h += row('logs', state.showLogs ? '🙈' : '👁', state.showLogs ? t('作業ログを隠す') : t('作業ログを表示'));
+      h += row('tree', '🌲', t('このリポジトリのツリーと Git'));
+      if (s) h += row('copy-id', '📋', t('セッション ID をコピー'));
+      if (s?.owner === 'oyakata') h += '<div class="msep"></div>' + row('end', '⏹', t('セッションを終了'), '', 'danger');
+      if (s) h += (s.owner === 'oyakata' ? '' : '<div class="msep"></div>') + row('delete', '🗑', t('セッションを削除'), '', 'danger');
       return h;
     }
     outlineHtml() {
@@ -326,19 +354,19 @@
       this.items.forEach((it, i) => {
         if (isPrompt(it)) rows.push(`<a href="#" data-jump="${i}"><span class="n">${rows.length + 1}</span>${esc(it.text.slice(0, 120))}</a>`);
       });
-      return rows.length ? rows.join('') : '<div class="sb-empty">プロンプトがありません</div>';
+      return rows.length ? rows.join('') : t('<div class="sb-empty">プロンプトがありません</div>');
     }
     filesHtml() {
       const s = this.session;
       const root = s?.repo?.root;
-      return '<div class="ptitle">このセッションが編集したファイル</div>' + (s?.edited_files || []).map((f) => {
+      return t('<div class="ptitle">このセッションが編集したファイル</div>') + (s?.edited_files || []).map((f) => {
         const rel = relTo(root, f.path);
-        return `<div class="prow" data-path="${esc(f.path)}" data-rel="${esc(rel || '')}" draggable="true"><span class="pp" title="${esc(f.path)}">${esc(stripCwd(f.path, s.cwd))}</span><span class="pc">${f.edits ? `編集 ${f.edits}` : ''}${f.edits && f.writes ? ' · ' : ''}${f.writes ? `書込 ${f.writes}` : ''}</span>${rel ? '<button type="button" class="btn open-diff">差分</button>' : ''}<button type="button" class="btn open-file">開く</button></div>`;
+        return `<div class="prow" data-path="${esc(f.path)}" data-rel="${esc(rel || '')}" draggable="true"><span class="pp" title="${esc(f.path)}">${esc(stripCwd(f.path, s.cwd))}</span><span class="pc">${f.edits ? `${t("編集")} ${f.edits}` : ''}${f.edits && f.writes ? ' · ' : ''}${f.writes ? `${t("書込")} ${f.writes}` : ''}</span>${rel ? t('<button type="button" class="btn open-diff">差分</button>') : ''}<button type="button" class="btn open-file">${t("開く")}</button></div>`;
       }).join('');
     }
     artifactsHtml() {
-      return '<div class="ptitle">アーティファクト（claude.ai）</div>' + (this.session?.artifacts || []).map((u) =>
-        `<div class="prow" data-url="${esc(u)}"><span class="pp">${esc(u)}</span><button type="button" class="btn open-url">開く</button><button type="button" class="btn copy-url">コピー</button></div>`).join('');
+      return t('<div class="ptitle">アーティファクト（claude.ai）</div>') + (this.session?.artifacts || []).map((u) =>
+        `<div class="prow" data-url="${esc(u)}"><span class="pp">${esc(u)}</span><button type="button" class="btn open-url">${t("開く")}</button><button type="button" class="btn copy-url">${t("コピー")}</button></div>`).join('');
     }
     async menuAction(act) {
       this.closePopovers();
@@ -347,11 +375,11 @@
       else if (act === 'files') this.togglePopover('.pop-files', () => this.filesHtml());
       else if (act === 'artifacts') this.togglePopover('.pop-artifacts', () => this.artifactsHtml());
       else if (act === 'team') OY.team.open(this.id);
-      else if (act === 'logs') { OY.setShowLogs(!state.showLogs); toast(state.showLogs ? '作業ログを表示します' : '作業ログを隠しました（会話だけを表示）'); }
+      else if (act === 'logs') { OY.setShowLogs(!state.showLogs); toast(state.showLogs ? t('作業ログを表示します') : t('作業ログを隠しました（会話だけを表示）')); }
       else if (act === 'tree') { if (this.session) OY.followSession(this.session); OY.sidebar.show('explorer'); }
       else if (act === 'copy-id') copyText(this.id);
       else if (act === 'end') {
-        if (!(await OY.confirmDialog('セッションを終了', 'OYAKATA 側の Claude プロセスを終了します。会話は残るので、あとからこの画面で続きを送れば再開できます。', { label: '終了', danger: true }))) return;
+        if (!(await OY.confirmDialog(t('セッションを終了'), `${t("OYAKATA 側の")} ${this.who()} ${t("プロセスを終了します。会話は残るので、あとからこの画面で続きを送れば再開できます。")}`, { label: t('終了'), danger: true }))) return;
         try { await api.post(`/api/run/${encodeURIComponent(this.id)}/stop`); } catch (e) { toast(e.message); }
       } else if (act === 'delete' && s) OY.deleteSession(this.id);
     }
@@ -370,7 +398,7 @@
       if (s?.owner === 'oyakata' || (r && !s)) {
         return { mode: r?.permission_mode || s?.permission_mode || DEFAULT_MODE, model: r?.model || s?.model || '', effort: r?.effort || s?.effort || '', edit: 'live' };
       }
-      if (s?.owner === 'terminal') return { mode: s.permission_mode || '', model: s.model || '', effort: s.effort || '', edit: null };
+      if (s?.owner === 'terminal' || s?.owner === 'external') return { mode: s.permission_mode || '', model: s.model || '', effort: s.effort || '', edit: null };
       return { mode: this.opts.mode, model: this.opts.model || s?.model || '', effort: this.opts.effort || s?.effort || '', edit: 'local' };
     }
     renderStatusline() {
@@ -379,20 +407,20 @@
       const mb = this.q('.sl-mode');
       const mi = MODES[c.mode];
       mb.className = `sl-mode m-${c.mode || 'unknown'}`;
-      mb.innerHTML = mi ? `<span class="glyph">${mi.glyph}</span> ${esc(mi.label)}${c.edit ? ' <span class="kh">(shift+tab で切替)</span>' : ''}` : (c.mode ? esc(c.mode) : '<span class="kh">権限モード不明</span>');
+      mb.innerHTML = mi ? `<span class="glyph">${mi.glyph}</span> ${esc(mi.label)}${c.edit ? t(' <span class="kh">(shift+tab で切替)</span>') : ''}` : (c.mode ? esc(c.mode) : t('<span class="kh">権限モード不明</span>'));
       mb.disabled = !c.edit;
       mb.title = mi ? mi.desc : '';
       const hint = this.q('.sl-hint');
-      hint.textContent = s?.owner === 'terminal' ? 'ターミナルで実行中' : (s && s.status === 'ended' && !this.isDraft()) ? '再開時に適用' : '';
+      hint.textContent = s?.owner === 'terminal' ? t('ターミナルで実行中') : s?.owner === 'external' ? t('別のプロセスで実行中') : (s && s.status === 'ended' && !this.isDraft()) ? t('再開時に適用') : (!this.interactive() && c.edit === 'live') ? t('次のターンから適用') : '';
       const model = this.q('.sl-model');
-      model.textContent = c.model ? shortModel(c.model) : '既定のモデル';
+      model.textContent = c.model ? shortModel(c.model) : t('既定のモデル');
       model.disabled = !c.edit;
-      model.title = c.edit ? 'モデルを切り替える' : 'モデル';
+      model.title = c.edit ? t('モデルを切り替える') : t('モデル');
       const effort = this.q('.sl-effort');
-      effort.hidden = !c.effort && c.edit !== 'local';
-      effort.textContent = c.effort ? `effort ${c.effort}` : 'effort 既定';
+      effort.hidden = (!c.effort && c.edit !== 'local') || this.agent === 'gemini';
+      effort.textContent = c.effort ? `effort ${c.effort}` : t('effort 既定');
       effort.disabled = c.edit !== 'local';
-      effort.title = c.edit === 'local' ? '努力レベル（開始・再開時に適用）' : '努力レベル';
+      effort.title = c.edit === 'local' ? t('努力レベル（開始・再開時に適用）') : t('努力レベル');
       // Context usage: tokens in the window after the latest response.
       const ctx = this.q('.sl-ctx');
       const used = s?.context_tokens || 0;
@@ -403,21 +431,27 @@
       ctx.className = 'sl-ctx ' + (pct >= 85 ? 'hot' : pct >= 65 ? 'warn' : 'ok');
       $('.ctx-bar i', ctx).style.width = pct.toFixed(1) + '%';
       $('.ctx-text', ctx).textContent = `ctx ${pct < 1 ? pct.toFixed(1) : Math.round(pct)}% · ${fmtTokens(used)}/${fmtTokens(win)}`;
-      ctx.title = `コンテキスト使用量: ${used.toLocaleString()} / ${win.toLocaleString()} トークン（残り ${Math.max(0, win - used).toLocaleString()}）\n上限に近づくと Claude Code が自動で圧縮します。${s?.compactions ? `\nこのセッションの圧縮: ${s.compactions} 回` : ''}`;
+      ctx.title = `${t("コンテキスト使用量:")} ${used.toLocaleString()} / ${win.toLocaleString()} ${t("トークン（残り")} ${Math.max(0, win - used).toLocaleString()}${t("）\n上限に近づくと Claude Code が自動で圧縮します。")}${s?.compactions ? `${t("\nこのセッションの圧縮:")} ${s.compactions} ${t("回")}` : ''}`;
     }
     modeMenuHtml() {
       const c = this.current();
-      return '<div class="ptitle">権限モード</div>' + Object.entries(MODES).map(([k, m]) =>
+      return t('<div class="ptitle">権限モード</div>') + Object.entries(MODES).map(([k, m]) =>
         `<a href="#" data-mode="${k}" class="${k === c.mode ? 'cur' : ''}"><span class="mi m-${k}">${m.glyph}</span><span class="ml"><b>${esc(k)}</b><span class="md2">${esc(m.desc)}</span></span>${k === c.mode ? '<span class="mc">✓</span>' : ''}</a>`).join('');
     }
     modelMenuHtml() {
       const c = this.current();
-      return '<div class="ptitle">モデル</div>' + MODELS.map(([v, l]) =>
+      if (!this.interactive()) {
+        // Other agents accept whatever model name their CLI knows; offer the default and a box.
+        const cur = !c.model ? ' class="cur"' : '';
+        return `<div class="ptitle">${t("モデル（")}${esc(this.who())}）</div><a href="#" data-model=""${cur}><span class="ml">${t("既定のモデル")}</span>${!c.model ? '<span class="mc">✓</span>' : ''}</a>
+          <div class="pinput"><input type="text" class="model-input" placeholder="${t("モデル名を入力して Enter（例: gpt-5.5 / pro / provider/model）")}" value="${esc(c.model || '')}" spellcheck="false"></div>`;
+      }
+      return t('<div class="ptitle">モデル</div>') + MODELS.map(([v, l]) =>
         `<a href="#" data-model="${esc(v)}" class="${v === c.model || (!v && !c.model) ? 'cur' : ''}"><span class="ml">${esc(l)}</span>${v ? `<span class="md2">${esc(v)}</span>` : ''}${v === c.model || (!v && !c.model) ? '<span class="mc">✓</span>' : ''}</a>`).join('');
     }
     effortMenuHtml() {
       const c = this.current();
-      return '<div class="ptitle">努力レベル</div>' + EFFORTS.map(([v, l]) => `<a href="#" data-effort="${esc(v)}" class="${v === (c.effort || '') ? 'cur' : ''}"><span class="ml">${esc(l)}</span>${v === (c.effort || '') ? '<span class="mc">✓</span>' : ''}</a>`).join('');
+      return t('<div class="ptitle">努力レベル</div>') + EFFORTS.map(([v, l]) => `<a href="#" data-effort="${esc(v)}" class="${v === (c.effort || '') ? 'cur' : ''}"><span class="ml">${esc(l)}</span>${v === (c.effort || '') ? '<span class="mc">✓</span>' : ''}</a>`).join('');
     }
     async setMode(mode) {
       const c = this.current();
@@ -437,7 +471,7 @@
       const c = this.current();
       if (!c.edit) return;
       if (c.edit === 'live') {
-        try { await api.post(`/api/run/${encodeURIComponent(this.id)}/model`, { model: model || undefined }); if (this.run) this.run.model = model || null; toast(`モデルを ${model ? shortModel(model) : '既定'} に切り替えました`); }
+        try { await api.post(`/api/run/${encodeURIComponent(this.id)}/model`, { model: model || undefined }); if (this.run) this.run.model = model || null; toast(`${t("モデルを")} ${model ? shortModel(model) : t('既定')} ${t("に切り替えました")}`); }
         catch (e) { toast(e.message); return; }
       } else this.opts.model = model;
       this.renderStatusline();
@@ -448,7 +482,7 @@
       this.transcript.innerHTML = '';
       const from = Math.max(0, this.items.length - INITIAL_WINDOW);
       this.renderedFrom = from;
-      const { frag, lastDate } = buildRange(this.items, from, this.items.length, this.cwd());
+      const { frag, lastDate } = buildRange(this.items, from, this.items.length, this.cwd(), this.who());
       this.lastDateKey = lastDate;
       this.transcript.appendChild(frag);
       observeMermaid(this.transcript);
@@ -545,7 +579,7 @@
       if (!it) { rib.hidden = true; return; }
       rib.dataset.idx = el.dataset.idx;
       const text = it.text.replace(/<\/?[a-z_-]+(\s[^>]*)?>/gi, ' ').replace(/\s+/g, ' ').trim();
-      rib.innerHTML = `<span class="rb-who">あなた</span><span class="rb-text">${esc(text.slice(0, 200))}</span><span class="rb-go">↑</span>`;
+      rib.innerHTML = `<span class="rb-who">${t("あなた")}</span><span class="rb-text">${esc(text.slice(0, 200))}</span><span class="rb-go">↑</span>`;
       rib.hidden = false;
     }
 
@@ -569,30 +603,33 @@
       if (qkey !== this.queuedKey) {
         this.queuedKey = qkey;
         this.q('.queued-msgs').innerHTML = queued.map((q) =>
-          `<div class="qmsg" title="送信済み。Claude が次のツール呼び出しの区切り（その前に今の作業が終わればその直後）で読みます"><span class="qm-glyph">⏳</span><span class="qm-text">${esc(q.text)}</span><span class="qm-note">次の区切りで渡します</span></div>`).join('');
+          `<div class="qmsg" title="${this.interactive() ? t('送信済み。Claude が次のツール呼び出しの区切り（その前に今の作業が終わればその直後）で読みます') : t('送信済み。今のターンが終わると次のターンとして渡します')}"><span class="qm-glyph">⏳</span><span class="qm-text">${esc(q.text)}</span><span class="qm-note">${this.interactive() ? t('次の区切りで渡します') : t('次のターンで渡します')}</span></div>`).join('');
       }
-      const tips = 'Enter で送信 · Shift+Enter で改行 · Shift+Tab で権限モード';
+      const tips = t('Enter で送信 · Shift+Enter で改行 · Shift+Tab で権限モード');
       if (this.isDraft()) {
         disabled = this.starting;
-        ph = this.starting ? 'Claude が準備しています…' : `何をしましょう？（${tips}）`;
+        ph = this.starting ? `${this.who()} ${t("が準備しています…")}` : `${t("何をしましょう？（")}${tips}）`;
       } else if (!s) {
         disabled = true;
       } else if (s.owner === 'oyakata') {
-        if (pending.length) { disabled = true; ph = '上のカードに答えると続きます'; }
-        else if (s.status === 'busy') ph = '作業中に指示を送る…（次の区切りで Claude に渡ります · Esc で中断）';
-        else ph = `指示を入力…（${tips}）`;
+        if (pending.length) { disabled = true; ph = t('上のカードに答えると続きます'); }
+        else if (s.status === 'busy') ph = this.interactive() ? t('作業中に指示を送る…（次の区切りで Claude に渡ります · Esc で中断）') : `${t("作業中…（送った指示は今のターンが終わってから")} ${this.who()} ${t("に渡します · Esc で中断）")}`;
+        else ph = `${t("指示を入力…（")}${tips}）`;
+      } else if (s.owner === 'external') {
+        disabled = true;
+        ph = `${this.who()} ${t("が別のプロセス（ターミナルなど）でこのセッションを動かしています。終わると送れます")}`;
       } else if (s.owner === 'terminal') {
         if (state.config.can_type === false || !s.live?.typeable) {
           disabled = true;
-          ph = state.config.can_type === false ? 'ターミナルで稼働中のセッションへの送信は Windows でのみ使えます' : 'IDE や SDK で動いているセッションには送れません（終了後に引き継げます）';
-        } else if (s.status === 'waiting') { disabled = true; ph = 'ターミナルで確認待ちです。ターミナル側で答えると送れます'; }
-        else if (s.status === 'busy') ph = 'ターミナルへ送信（作業中に打ち込んだ扱いになります・Esc で中断）';
-        else ph = 'ターミナルへ送信…（ターミナルの入力欄に打ち込んで Enter）';
-      } else if (state.config.can_run === false) {
+          ph = state.config.can_type === false ? t('ターミナルで稼働中のセッションへの送信は Windows でのみ使えます') : t('IDE や SDK で動いているセッションには送れません（終了後に引き継げます）');
+        } else if (s.status === 'waiting') { disabled = true; ph = t('ターミナルで確認待ちです。ターミナル側で答えると送れます'); }
+        else if (s.status === 'busy') ph = t('ターミナルへ送信（作業中に打ち込んだ扱いになります・Esc で中断）');
+        else ph = t('ターミナルへ送信…（ターミナルの入力欄に打ち込んで Enter）');
+      } else if (this.agentCfg().can_run === false || (this.agent === 'claude' && state.config.can_run === false)) {
         disabled = true;
-        ph = 'claude コマンドが見つからないため、ここからは送れません（oyakata --claude <path>）';
+        ph = `${this.agentCfg().exe_name || this.agent} ${t("コマンドが見つからないため、ここからは送れません")}`;
       } else {
-        ph = '送信すると OYAKATA がこのセッションを引き継いで再開します…';
+        ph = t('送信すると OYAKATA がこのセッションを引き継いで再開します…');
       }
       ta.disabled = disabled;
       ta.placeholder = ph;
@@ -605,16 +642,16 @@
         if (p.tool_name === 'AskUserQuestion') {
           const qs = (p.input?.questions || []).map((q, qi) => `<div class="qblock" data-q="${qi}">${q.header ? `<div class="qhead">${esc(q.header)}</div>` : ''}<div class="qtext">${esc(q.question)}</div>${(q.options || []).map((o, oi) =>
             `<label><input type="${q.multiSelect ? 'checkbox' : 'radio'}" name="q${qi}-${esc(p.request_id)}" value="${esc(o.label)}"${oi === 0 && !q.multiSelect ? ' checked' : ''}><span><b>${esc(o.label)}</b>${o.description ? `<div class="od">${esc(o.description)}</div>` : ''}</span></label>`).join('')}
-            <label><input type="${q.multiSelect ? 'checkbox' : 'radio'}" name="q${qi}-${esc(p.request_id)}" value="__other__"><span>その他: <input type="text" class="other-text" placeholder="自由記述"></span></label></div>`).join('');
-          return `<div class="pcard" data-req="${esc(p.request_id)}"><div class="pcard-head"><span class="kicker">質問</span><span>Claude からの質問</span></div><div class="pcard-body">${qs}</div><div class="pcard-actions"><button type="button" class="btn primary answer-q">回答する</button></div></div>`;
+            <label><input type="${q.multiSelect ? 'checkbox' : 'radio'}" name="q${qi}-${esc(p.request_id)}" value="__other__"><span>${t("その他:")} <input type="text" class="other-text" placeholder="${t("自由記述")}"></span></label></div>`).join('');
+          return `<div class="pcard" data-req="${esc(p.request_id)}"><div class="pcard-head"><span class="kicker">${t("質問")}</span><span>${t("Claude からの質問")}</span></div><div class="pcard-body">${qs}</div><div class="pcard-actions"><button type="button" class="btn primary answer-q">${t("回答する")}</button></div></div>`;
         }
         if (p.tool_name === 'ExitPlanMode') {
-          return `<div class="pcard plan" data-req="${esc(p.request_id)}"><div class="pcard-head"><span class="kicker">計画の承認</span><span>Claude が計画を提示しています</span></div><div class="pcard-body md">${md(p.input?.plan || '')}</div><div class="pcard-actions"><button type="button" class="btn primary perm-allow">承認して進める</button><button type="button" class="btn danger perm-deny">修正を依頼</button><textarea class="deny-reason" rows="1" placeholder="修正してほしい点（拒否時に Claude へ伝わります）"></textarea></div></div>`;
+          return `<div class="pcard plan" data-req="${esc(p.request_id)}"><div class="pcard-head"><span class="kicker">${t("計画の承認")}</span><span>${t("Claude が計画を提示しています")}</span></div><div class="pcard-body md">${md(p.input?.plan || '')}</div><div class="pcard-actions"><button type="button" class="btn primary perm-allow">${t("承認して進める")}</button><button type="button" class="btn danger perm-deny">${t("修正を依頼")}</button><textarea class="deny-reason" rows="1" placeholder="${t("修正してほしい点（拒否時に Claude へ伝わります）")}"></textarea></div></div>`;
         }
         const sugg = Array.isArray(p.suggestions) && p.suggestions.length;
-        return `<div class="pcard" data-req="${esc(p.request_id)}"><div class="pcard-head"><span class="kicker">許可の確認</span><span class="tool-icon">${TOOL_ICON[p.tool_name] || '🔧'}</span><span>${esc(p.display_name || p.tool_name)}</span>${p.description ? `<span class="muted">${esc(p.description)}</span>` : ''}</div>
+        return `<div class="pcard" data-req="${esc(p.request_id)}"><div class="pcard-head"><span class="kicker">${t("許可の確認")}</span><span class="tool-icon">${TOOL_ICON[p.tool_name] || '🔧'}</span><span>${esc(p.display_name || p.tool_name)}</span>${p.description ? `<span class="muted">${esc(p.description)}</span>` : ''}</div>
           <div class="pcard-body">${toolInputHtml(p.tool_name, p.input, cwd)}</div>
-          <div class="pcard-actions"><button type="button" class="btn primary perm-allow">許可</button>${sugg ? '<button type="button" class="btn perm-allow-always" title="Claude Code が提案する範囲でこのセッション中は確認を省く">許可（以後も）</button>' : ''}<button type="button" class="btn danger perm-deny">拒否</button><input type="text" class="deny-reason" placeholder="拒否の理由（任意、Claude に伝わります）"></div></div>`;
+          <div class="pcard-actions"><button type="button" class="btn primary perm-allow">${t("許可")}</button>${sugg ? t('<button type="button" class="btn perm-allow-always" title="Claude Code が提案する範囲でこのセッション中は確認を省く">許可（以後も）</button>') : ''}<button type="button" class="btn danger perm-deny">${t("拒否")}</button><input type="text" class="deny-reason" placeholder="${t("拒否の理由（任意、Claude に伝わります）")}"></div></div>`;
       }).join('');
       observeMermaid(this.q('.pending-cards'));
     }
@@ -647,10 +684,11 @@
       this.q('.send-btn').disabled = true;
       try {
         if (this.isDraft()) {
-          await api.post('/api/run/start', {
-            cwd: this.draftCwd, prompt: text, session_id: this.id,
+          const r = await api.post('/api/run/start', {
+            agent: this.agent, cwd: this.draftCwd, prompt: text, session_id: this.agentCfg().assigns_id ? undefined : this.id,
             model: this.opts.model || undefined, permission_mode: this.opts.mode, effort: this.opts.effort || undefined,
           });
+          if (r.session_id && r.session_id !== this.id) this.rekey(r.session_id);
           this.starting = true;
           this.pendingPrompt = text;
           this.awaitingTranscript = true;
@@ -662,7 +700,7 @@
           await api.post(`/api/terminal/${encodeURIComponent(s.id)}/send`, { text });
         } else {
           await api.post('/api/run/start', {
-            cwd: s.cwd, prompt: text, resume: s.id,
+            agent: this.agent, cwd: s.cwd, prompt: text, resume: s.id,
             model: this.opts.model || s.model || undefined, permission_mode: this.opts.mode, effort: this.opts.effort || s.effort || undefined,
           });
         }
@@ -740,7 +778,17 @@
       q('.sl-mode').addEventListener('click', (e) => this.togglePopover('.pop-sl', () => this.modeMenuHtml(), e.currentTarget));
       q('.sl-model').addEventListener('click', (e) => this.togglePopover('.pop-sl', () => this.modelMenuHtml(), e.currentTarget));
       q('.sl-effort').addEventListener('click', (e) => this.togglePopover('.pop-sl', () => this.effortMenuHtml(), e.currentTarget));
+      q('.pop-sl').addEventListener('keydown', (e) => {
+        const input = e.target.closest('.model-input');
+        if (!input || e.key !== 'Enter') return;
+        e.preventDefault();
+        const v = input.value.trim();
+        this.closePopovers();
+        this.setModel(v);
+        this.ta.focus();
+      });
       q('.pop-sl').addEventListener('click', (e) => {
+        if (e.target.closest('.model-input')) return;
         const a = e.target.closest('a');
         if (!a) return;
         e.preventDefault();
@@ -770,22 +818,24 @@
   function open(id, opts = {}) {
     const s = state.byId.get(id);
     if (s) OY.followSession(s);
-    const tab = OY.wb.open({ kind: 'chat', key: 'chat:' + id, title: s ? sessionTitle(s) : 'セッション', icon: '💬', data: { id } }, { where: 'bottom', ...opts });
+    const tab = OY.wb.open({ kind: 'chat', key: 'chat:' + id, title: s ? sessionTitle(s) : t('セッション'), icon: '💬', data: { id } }, { where: 'bottom', ...opts });
     if (opts.ts) tab?.inst?.revealTs?.(opts.ts);
     return tab;
   }
-  /// A new session in `cwd`: opens an empty chat; Claude starts when the first prompt is sent.
-  function openDraft(cwd) {
+  /// A new session in `cwd`: opens an empty chat; the agent starts when the first prompt is sent.
+  function openDraft(cwd, agent) {
     const id = OY.uuid();
+    agent = agent || OY.defaultAgent();
     OY.setActiveRepo(repoOfCwd(cwd)?.root || cwd);
     const repo = repoOfCwd(cwd);
-    const tab = OY.wb.open({ kind: 'chat', key: 'chat:' + id, title: `新しいセッション · ${repo?.name || basename(cwd)}`, icon: '💬', data: { id, cwd, draft: true } }, { where: 'bottom' });
+    const tag = agent !== 'claude' ? ` (${agentLabel(agent)})` : '';
+    const tab = OY.wb.open({ kind: 'chat', key: 'chat:' + id, title: `${t("新しいセッション ·")} ${repo?.name || basename(cwd)}${tag}`, icon: '💬', data: { id, cwd, draft: true, agent } }, { where: 'bottom' });
     setTimeout(() => tab?.inst?.focus?.(), 30);
     return tab;
   }
   function desc(id) {
     const s = state.byId.get(id);
-    return { kind: 'chat', key: 'chat:' + id, title: s ? sessionTitle(s) : 'セッション', icon: '💬', data: { id } };
+    return { kind: 'chat', key: 'chat:' + id, title: s ? sessionTitle(s) : t('セッション'), icon: '💬', data: { id } };
   }
 
   OY.wb.registerKind('chat', (d) => {

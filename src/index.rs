@@ -1,7 +1,10 @@
-//! The session index: every transcript under `~/.claude/projects`, its metadata, which ones
-//! are live, which ones OYAKATA itself is running, and incremental refresh that turns file
-//! growth into events for the browser.
+//! The session index: every transcript under `~/.claude/projects` plus the sessions of every
+//! other enabled agent (see `agents`), their metadata, which ones are live, which ones OYAKATA
+//! itself is running, and incremental refresh that turns file growth into events for the
+//! browser. Non-Claude transcripts are converted to Claude Code's JSONL shape on the way in,
+//! so one parser serves them all.
 
+use crate::agents::{self, canon, AgentInfo, AgentKind, AgentOverride, Discovered};
 use crate::gitops;
 use crate::live::{self, LiveInfo};
 use crate::repo::{self, RepoInfo};
@@ -65,7 +68,69 @@ pub struct SessionEntry {
     pub repo: Option<RepoInfo>,
     pub agents: Vec<AgentMeta>,
     agents_scanned_at: Option<Instant>,
+    pub agent: AgentKind,
+    pub source: Source,
+    /// Bytes of the native file already converted (file-based non-Claude agents).
+    raw_offset: u64,
+    /// Partial trailing line of the native file, kept until its newline arrives.
+    raw_pending: Vec<u8>,
+    /// From the agent's own listing, for agents whose transcript carries no title / cwd.
+    pub title_hint: Option<String>,
+    pub cwd_hint: Option<String>,
+    /// Last update per the agent's listing (OpenCode), epoch ms.
+    pub updated_ms: u64,
+    /// `updated_ms` at the last transcript fetch (OpenCode).
+    pub fetched_ms: u64,
 }
+
+/// How a session's transcript reaches the parser.
+pub enum Source {
+    /// Claude Code's own JSONL, fed as-is.
+    Claude,
+    /// Append-only native files converted line by line.
+    Codex(agents::codex::Converter),
+    Copilot(agents::copilot::Converter),
+    /// Files whose earlier records can change: re-parsed whole on every change.
+    Gemini,
+    /// Pulled through the agent's CLI by the OpenCode loop (`install_canonical`).
+    Opencode,
+}
+
+impl SessionEntry {
+    fn new(id: String, path: PathBuf, project_dir: String, agent: AgentKind) -> Self {
+        let source = match agent {
+            AgentKind::Claude => Source::Claude,
+            AgentKind::Codex => Source::Codex(Default::default()),
+            AgentKind::Copilot => Source::Copilot(Default::default()),
+            AgentKind::Gemini => Source::Gemini,
+            AgentKind::Opencode => Source::Opencode,
+        };
+        Self {
+            id,
+            path,
+            project_dir,
+            size: 0,
+            mtime_ms: 0,
+            transcript: Transcript::new(false),
+            last_viewed: None,
+            repo: None,
+            agents: Vec::new(),
+            agents_scanned_at: None,
+            agent,
+            source,
+            raw_offset: 0,
+            raw_pending: Vec::new(),
+            title_hint: None,
+            cwd_hint: None,
+            updated_ms: 0,
+            fetched_ms: 0,
+        }
+    }
+}
+
+/// A session of another agent whose file has changed within this window counts as running
+/// there ("external"), since those agents keep no registry of live processes.
+const EXTERNAL_BUSY_MS: u64 = 20_000;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct EditedFile {
@@ -78,6 +143,8 @@ pub struct EditedFile {
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionSummary {
     pub id: String,
+    pub agent: AgentKind,
+    pub agent_label: &'static str,
     pub project_dir: String,
     pub cwd: Option<String>,
     pub repo: RepoInfo,
@@ -147,6 +214,7 @@ pub enum Event {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunState {
+    pub agent: AgentKind,
     pub status: String,
     pub waiting_for: Option<String>,
     pub cwd: String,
@@ -158,6 +226,12 @@ pub struct RunState {
 
 pub struct State {
     pub claude_dir: PathBuf,
+    /// OYAKATA's own folder (`~/.oyakata`): config.json, trash, log.
+    pub oyakata_dir: PathBuf,
+    pub agents: Vec<AgentInfo>,
+    /// UI / CLI language chosen by the user (`ja` | `en`), `None` until chosen.
+    pub lang: Option<String>,
+    pub agent_overrides: BTreeMap<String, AgentOverride>,
     pub sessions: HashMap<String, SessionEntry>,
     pub live: HashMap<String, LiveInfo>,
     pub runs: HashMap<String, RunState>,
@@ -172,9 +246,13 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(claude_dir: PathBuf) -> Self {
+    pub fn new(claude_dir: PathBuf, oyakata_dir: PathBuf) -> Self {
         Self {
             claude_dir,
+            oyakata_dir,
+            agents: Vec::new(),
+            lang: None,
+            agent_overrides: BTreeMap::new(),
             sessions: HashMap::new(),
             live: HashMap::new(),
             runs: HashMap::new(),
@@ -235,25 +313,96 @@ impl State {
                 if self.sessions.contains_key(&stem) {
                     continue;
                 }
-                self.sessions.insert(
-                    stem.clone(),
-                    SessionEntry {
-                        id: stem.clone(),
-                        path: fpath,
-                        project_dir: project_dir.clone(),
-                        size: 0,
-                        mtime_ms: 0,
-                        transcript: Transcript::new(false),
-                        last_viewed: None,
-                        repo: None,
-                        agents: Vec::new(),
-                        agents_scanned_at: None,
-                    },
-                );
+                self.sessions.insert(stem.clone(), SessionEntry::new(stem.clone(), fpath, project_dir.clone(), AgentKind::Claude));
                 added.push(stem);
             }
         }
+        added.extend(self.discover_agents());
         added
+    }
+
+    /// Sessions of the other file-based agents (OpenCode is listed by its own loop).
+    fn discover_agents(&mut self) -> Vec<String> {
+        let infos: Vec<AgentInfo> = self.agents.iter().filter(|a| a.enabled && !matches!(a.kind, AgentKind::Claude | AgentKind::Opencode)).cloned().collect();
+        let mut added = Vec::new();
+        for info in infos {
+            added.extend(self.adopt(agents::discover(&info)));
+        }
+        added
+    }
+
+    /// Register sessions an adapter found. Known ones only get their listing facts refreshed.
+    pub fn adopt(&mut self, found: Vec<Discovered>) -> Vec<String> {
+        let mut added = Vec::new();
+        for d in found {
+            if let Some(e) = self.sessions.get_mut(&d.id) {
+                if let Some(t) = d.title {
+                    e.title_hint = Some(t);
+                }
+                if let Some(u) = d.updated_ms {
+                    e.updated_ms = u;
+                    if e.agent == AgentKind::Opencode {
+                        e.mtime_ms = u;
+                    }
+                }
+                continue;
+            }
+            let mut e = SessionEntry::new(d.id.clone(), d.path, d.project_dir, d.agent);
+            e.title_hint = d.title;
+            e.cwd_hint = d.cwd.clone();
+            e.updated_ms = d.updated_ms.unwrap_or(0);
+            if d.agent == AgentKind::Opencode {
+                e.mtime_ms = e.updated_ms;
+            }
+            if let Some(cwd) = &d.cwd {
+                e.repo = Some(repo_for(&mut self.repo_cache, cwd));
+            }
+            self.sessions.insert(d.id.clone(), e);
+            added.push(d.id);
+        }
+        added
+    }
+
+    /// Replace a session's transcript with converted canonical bytes (OpenCode, whose
+    /// transcripts come through its CLI). Returns the events the browser needs.
+    pub fn install_canonical(&mut self, id: &str, bytes: &[u8], updated_ms: u64) -> Vec<Event> {
+        let mut events = Vec::new();
+        let Some(entry) = self.sessions.get_mut(id) else { return events };
+        let keep = entry.transcript.keeps_items();
+        entry.transcript = Transcript::new(keep);
+        entry.transcript.feed(bytes);
+        entry.size = bytes.len() as u64;
+        entry.mtime_ms = updated_ms.max(entry.mtime_ms);
+        entry.updated_ms = updated_ms.max(entry.updated_ms);
+        entry.fetched_ms = entry.updated_ms;
+        if entry.repo.is_none() {
+            if let Some(cwd) = entry.transcript.meta.cwd.clone().or_else(|| entry.cwd_hint.clone()) {
+                entry.repo = Some(repo_for(&mut self.repo_cache, &cwd));
+            }
+        }
+        if keep {
+            events.push(Event::Reset { session: id.to_string() });
+            if !entry.transcript.items.is_empty() {
+                events.push(Event::Append { session: id.to_string(), start: 0, items: entry.transcript.items.clone() });
+            }
+        }
+        events
+    }
+
+    /// OpenCode sessions whose listing moved past what was fetched, newest first.
+    pub fn stale_opencode(&self) -> Vec<(String, Option<String>, Option<String>, u64)> {
+        let mut v: Vec<_> = self
+            .sessions
+            .values()
+            .filter(|e| e.agent == AgentKind::Opencode && e.updated_ms > e.fetched_ms)
+            .map(|e| (e.id.clone(), e.title_hint.clone(), e.cwd_hint.clone(), e.updated_ms))
+            .collect();
+        v.sort_by(|a, b| b.3.cmp(&a.3));
+        v
+    }
+
+    pub fn agent_exe(&self, kind: AgentKind) -> Option<agents::Exe> {
+        self.agents.iter().find(|a| a.kind == kind).and_then(|a| a.exe.clone())
     }
 
     /// Re-read one session if its file changed. Emits events only for loaded sessions.
@@ -265,27 +414,77 @@ impl State {
         let Ok(md) = fs::metadata(&entry.path) else {
             return events;
         };
+        if matches!(entry.source, Source::Opencode) {
+            return events; // pulled by the OpenCode loop
+        }
         let size = md.len();
         let mtime_ms = mtime_millis(&md);
         if size == entry.size && mtime_ms == entry.mtime_ms {
             return events;
         }
-        if size < entry.transcript.consumed {
-            let keep = entry.transcript.keeps_items();
-            entry.transcript = Transcript::new(keep);
-            if keep {
-                events.push(Event::Reset { session: id.to_string() });
+        let keep = entry.transcript.keeps_items();
+        let mut old_len = entry.transcript.items.len();
+        let changes = match &mut entry.source {
+            Source::Claude => {
+                if size < entry.transcript.consumed {
+                    entry.transcript = Transcript::new(keep);
+                    old_len = 0;
+                    if keep {
+                        events.push(Event::Reset { session: id.to_string() });
+                    }
+                }
+                match read_from(&entry.path, entry.transcript.consumed) {
+                    Ok(bytes) => entry.transcript.feed(&bytes),
+                    Err(_) => return events,
+                }
             }
-        }
-        let old_len = entry.transcript.items.len();
-        let changes = match read_from(&entry.path, entry.transcript.consumed) {
-            Ok(bytes) => entry.transcript.feed(&bytes),
-            Err(_) => return events,
+            Source::Codex(_) | Source::Copilot(_) => {
+                if size < entry.raw_offset {
+                    entry.transcript = Transcript::new(keep);
+                    entry.raw_offset = 0;
+                    entry.raw_pending.clear();
+                    entry.source = match entry.agent {
+                        AgentKind::Codex => Source::Codex(Default::default()),
+                        _ => Source::Copilot(Default::default()),
+                    };
+                    old_len = 0;
+                    if keep {
+                        events.push(Event::Reset { session: id.to_string() });
+                    }
+                }
+                let Ok(bytes) = read_from(&entry.path, entry.raw_offset) else { return events };
+                entry.raw_offset += bytes.len() as u64;
+                let mut buf = std::mem::take(&mut entry.raw_pending);
+                buf.extend_from_slice(&bytes);
+                let mut lines = Vec::new();
+                let mut start = 0;
+                while let Some(rel) = buf[start..].iter().position(|&b| b == b'\n') {
+                    let raw = &buf[start..start + rel];
+                    start += rel + 1;
+                    match &mut entry.source {
+                        Source::Codex(c) => lines.extend(c.convert_line(raw)),
+                        Source::Copilot(c) => lines.extend(c.convert_line(raw)),
+                        _ => {}
+                    }
+                }
+                entry.raw_pending = buf[start..].to_vec();
+                entry.transcript.feed(&canon::to_jsonl(&lines))
+            }
+            Source::Gemini => {
+                let Ok(bytes) = fs::read(&entry.path) else { return events };
+                entry.transcript = Transcript::new(keep);
+                old_len = 0;
+                if keep {
+                    events.push(Event::Reset { session: id.to_string() });
+                }
+                entry.transcript.feed(&canon::to_jsonl(&agents::gemini::convert_all(&bytes)))
+            }
+            Source::Opencode => return events,
         };
         entry.size = size;
         entry.mtime_ms = mtime_ms;
         if entry.repo.is_none() {
-            if let Some(cwd) = entry.transcript.meta.cwd.clone() {
+            if let Some(cwd) = entry.transcript.meta.cwd.clone().or_else(|| entry.cwd_hint.clone()) {
                 entry.repo = Some(repo_for(&mut self.repo_cache, &cwd));
             }
         }
@@ -350,6 +549,7 @@ impl State {
                 self.runs.insert(
                     id.to_string(),
                     RunState {
+                        agent: v.agent,
                         status: v.status.clone(),
                         waiting_for,
                         cwd: v.cwd.clone(),
@@ -364,12 +564,6 @@ impl State {
                 self.runs.remove(id);
             }
         }
-    }
-
-    /// Where a session's file is and whether its items are already in memory. Lets callers
-    /// parse a large file without holding the state lock, then hand the result to `install`.
-    pub fn path_of(&self, id: &str) -> Option<(PathBuf, bool)> {
-        self.sessions.get(id).map(|e| (e.path.clone(), e.transcript.keeps_items()))
     }
 
     /// Adopt a transcript that was parsed outside the lock. If another caller got there first
@@ -495,6 +689,7 @@ impl State {
         let cwd = m
             .cwd
             .clone()
+            .or_else(|| e.cwd_hint.clone())
             .or_else(|| run.map(|r| r.cwd.clone()))
             .or_else(|| live.as_ref().and_then(|l| l.cwd.clone()));
         let repo = e
@@ -510,6 +705,7 @@ impl State {
         let (owner, status, waiting_for) = match (run, &live) {
             (Some(r), _) => (Some("oyakata".to_string()), r.status.clone(), r.waiting_for.clone()),
             (None, Some(l)) => (Some("terminal".to_string()), l.status.clone(), l.waiting_for.clone()),
+            (None, None) if self.external_busy(e) => (Some("external".to_string()), "busy".to_string(), None),
             (None, None) => (None, "ended".to_string(), None),
         };
         let mut edited_files: Vec<EditedFile> = m
@@ -521,10 +717,12 @@ impl State {
         edited_files.truncate(80);
         SessionSummary {
             id: e.id.clone(),
+            agent: e.agent,
+            agent_label: e.agent.label(),
             project_dir: e.project_dir.clone(),
             cwd,
             repo,
-            title: m.title().or_else(|| live.as_ref().and_then(|l| l.name.clone())),
+            title: m.title().or_else(|| live.as_ref().and_then(|l| l.name.clone())).or_else(|| e.title_hint.clone()),
             first_prompt: m.first_prompt.clone(),
             last_prompt: m.last_prompt.clone(),
             started_at: m.started_at.clone(),
@@ -560,6 +758,11 @@ impl State {
         }
     }
 
+    /// Another agent's session whose file changed moments ago: running in its own terminal.
+    fn external_busy(&self, e: &SessionEntry) -> bool {
+        e.agent != AgentKind::Claude && !self.runs.contains_key(&e.id) && !self.live.contains_key(&e.id) && now_ms().saturating_sub(e.mtime_ms) < EXTERNAL_BUSY_MS
+    }
+
     /// All sessions, most recently active first. Sessions OYAKATA is running but that have
     /// not written a transcript yet are included as placeholders so the UI can show them.
     pub fn summaries(&self) -> Vec<SessionSummary> {
@@ -571,10 +774,12 @@ impl State {
             let repo = repo::detect(&run.cwd);
             v.push(SessionSummary {
                 id: id.clone(),
+                agent: run.agent,
+                agent_label: run.agent.label(),
                 project_dir: String::new(),
                 cwd: Some(run.cwd.clone()),
                 repo,
-                title: Some("（開始中）".into()),
+                title: Some(crate::i18n::tr("（開始中）", "(starting)").into()),
                 first_prompt: None,
                 last_prompt: None,
                 started_at: None,
@@ -709,6 +914,8 @@ impl State {
             let e = &self.sessions[id];
             id.hash(&mut h);
             e.size.hash(&mut h);
+            e.updated_ms.hash(&mut h);
+            self.external_busy(e).hash(&mut h);
             e.transcript.meta.ai_title.hash(&mut h);
             e.transcript.meta.agent_name.hash(&mut h);
             e.agents.len().hash(&mut h);
@@ -740,12 +947,19 @@ impl State {
     // ---- added repositories ---------------------------------------------------------------
 
     fn config_path(&self) -> PathBuf {
-        self.claude_dir.join("oyakata.json")
+        self.oyakata_dir.join("config.json")
     }
 
-    /// Read `oyakata.json` (folders the user added from the browser).
+    /// Read `~/.oyakata/config.json` (`repos`, `lang`, `agents`). The pre-0.2 location
+    /// `~/.claude/oyakata.json` is imported when the new file does not exist yet.
     pub fn load_config(&mut self) {
-        let Ok(text) = fs::read_to_string(self.config_path()) else { return };
+        let text = match fs::read_to_string(self.config_path()) {
+            Ok(t) => t,
+            Err(_) => match fs::read_to_string(self.claude_dir.join("oyakata.json")) {
+                Ok(t) => t,
+                Err(_) => return,
+            },
+        };
         let Ok(v) = serde_json::from_str::<Value>(&text) else { return };
         self.added_repos = v
             .get("repos")
@@ -755,23 +969,50 @@ impl State {
             .filter_map(Value::as_str)
             .map(PathBuf::from)
             .collect();
+        self.lang = v.get("lang").and_then(Value::as_str).filter(|l| matches!(*l, "ja" | "en")).map(str::to_string);
+        self.agent_overrides = v.get("agents").cloned().and_then(|a| serde_json::from_value(a).ok()).unwrap_or_default();
     }
 
-    fn save_config(&self) -> Result<()> {
+    pub fn save_config(&self) -> Result<()> {
         let mut v: Value = fs::read_to_string(self.config_path())
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok())
             .filter(Value::is_object)
             .unwrap_or_else(|| serde_json::json!({}));
         v["repos"] = Value::Array(self.added_repos.iter().map(|p| Value::String(p.display().to_string())).collect());
+        match &self.lang {
+            Some(l) => v["lang"] = Value::String(l.clone()),
+            None => {
+                v.as_object_mut().map(|o| o.remove("lang"));
+            }
+        }
+        v["agents"] = serde_json::to_value(&self.agent_overrides)?;
+        fs::create_dir_all(&self.oyakata_dir)?;
         fs::write(self.config_path(), serde_json::to_vec_pretty(&v)?)?;
         Ok(())
+    }
+
+    pub fn set_lang(&mut self, lang: Option<String>) -> Result<()> {
+        self.lang = lang.filter(|l| matches!(l.as_str(), "ja" | "en"));
+        self.save_config()
+    }
+
+    /// Enable or disable an agent; takes effect for new discoveries and the new-session dialog.
+    pub fn set_agent_enabled(&mut self, kind: AgentKind, enabled: bool) -> Result<()> {
+        self.agent_overrides.entry(kind.id().to_string()).or_default().enabled = Some(enabled);
+        if let Some(a) = self.agents.iter_mut().find(|a| a.kind == kind) {
+            a.enabled = enabled;
+        }
+        if !enabled {
+            self.sessions.retain(|_, e| e.agent != kind);
+        }
+        self.save_config()
     }
 
     /// List a folder in the sidebar even when no session has run there yet.
     pub fn add_repo(&mut self, path: PathBuf) -> Result<()> {
         if !path.is_dir() {
-            return Err(anyhow!("{} はフォルダではありません", path.display()));
+            return Err(anyhow!("{}", if crate::i18n::is_ja() { format!("{} はフォルダではありません", path.display()) } else { format!("{} is not a folder", path.display()) }));
         }
         let key = repo::normalize(&path);
         if !self.added_repos.iter().any(|p| repo::normalize(p) == key) {
@@ -795,29 +1036,50 @@ impl State {
     // ---- deleting sessions ----------------------------------------------------------------
 
     fn trash_dir(&self) -> PathBuf {
-        self.claude_dir.join("oyakata-trash")
+        self.oyakata_dir.join("trash")
     }
 
-    /// Move a session's transcript (and its side folder of subagents / tool results) into
-    /// `oyakata-trash/<ms>-<id>/` so a mistaken delete can be undone.
+    /// Move a session's transcript (plus Claude's side folder of subagents, or Copilot's
+    /// whole session folder) into `~/.oyakata/trash/<ms>-<id>/` so a mistaken delete can be
+    /// undone. OpenCode keeps its sessions in a database, so those are deleted through its
+    /// CLI and cannot be restored.
     pub fn delete_session(&mut self, id: &str) -> Result<()> {
         if self.live.contains_key(id) || self.runs.contains_key(id) {
-            return Err(anyhow!("稼働中のセッションは削除できません。終了してから削除してください。"));
+            return Err(anyhow!("{}", crate::i18n::tr("稼働中のセッションは削除できません。終了してから削除してください。", "A running session cannot be deleted. Stop it first.")));
         }
         let e = self.sessions.get(id).ok_or_else(|| anyhow!("unknown session: {id}"))?;
+        if self.external_busy(e) {
+            return Err(anyhow!("{}", crate::i18n::tr("別のプロセスで稼働中のセッションは削除できません。", "This session is running in another process and cannot be deleted.")));
+        }
+        let agent = e.agent;
         let path = e.path.clone();
-        let origin = path.parent().map(Path::to_path_buf).ok_or_else(|| anyhow!("bad session path"))?;
+        if agent == AgentKind::Opencode {
+            let exe = self.agent_exe(agent).ok_or_else(|| anyhow!("opencode executable not found"))?;
+            let out = exe.std_command().args(["session", "delete", id]).stdin(std::process::Stdio::null()).output()?;
+            if !out.status.success() {
+                return Err(anyhow!("opencode session delete: {}", String::from_utf8_lossy(&out.stderr).trim()));
+            }
+            self.sessions.remove(id);
+            return Ok(());
+        }
+        // Copilot's transcript is one file inside a per-session folder: move the folder.
+        let moved: PathBuf = if agent == AgentKind::Copilot { path.parent().map(Path::to_path_buf).unwrap_or(path.clone()) } else { path.clone() };
+        let origin = moved.parent().map(Path::to_path_buf).ok_or_else(|| anyhow!("bad session path"))?;
         let dest = self.trash_dir().join(format!("{}-{id}", now_ms()));
         fs::create_dir_all(&dest)?;
         fs::write(dest.join("origin.txt"), origin.to_string_lossy().as_bytes())?;
-        let file_name = path.file_name().ok_or_else(|| anyhow!("bad session path"))?;
-        fs::rename(&path, dest.join(file_name)).map_err(|err| {
+        fs::write(dest.join("agent.txt"), agent.id())?;
+        let file_name = moved.file_name().ok_or_else(|| anyhow!("bad session path"))?;
+        fs::write(dest.join("name.txt"), file_name.to_string_lossy().as_bytes())?;
+        fs::rename(&moved, dest.join(file_name)).map_err(|err| {
             let _ = fs::remove_dir_all(&dest);
-            anyhow!("{} を移動できませんでした: {err}", path.display())
+            anyhow!("{}: {err}", crate::i18n::tr(&format!("{} を移動できませんでした", moved.display()), &format!("could not move {}", moved.display())))
         })?;
-        let side = path.with_extension("");
-        if side.is_dir() {
-            let _ = fs::rename(&side, dest.join(id));
+        if agent == AgentKind::Claude {
+            let side = path.with_extension("");
+            if side.is_dir() {
+                let _ = fs::rename(&side, dest.join(id));
+            }
         }
         self.sessions.remove(id);
         Ok(())
@@ -826,19 +1088,22 @@ impl State {
     /// Undo `delete_session`.
     pub fn restore_session(&mut self, id: &str) -> Result<()> {
         let suffix = format!("-{id}");
-        let found = fs::read_dir(self.trash_dir())?
+        let found = fs::read_dir(self.trash_dir())
+            .ok()
+            .into_iter()
+            .flatten()
             .flatten()
             .map(|e| e.path())
             .filter(|p| p.file_name().map(|n| n.to_string_lossy().ends_with(&suffix)).unwrap_or(false))
             .max()
-            .ok_or_else(|| anyhow!("ゴミ箱にセッション {id} が見つかりません"))?;
+            .ok_or_else(|| anyhow!("{}", crate::i18n::tr(&format!("ゴミ箱にセッション {id} が見つかりません"), &format!("session {id} is not in the trash"))))?;
         let origin = PathBuf::from(fs::read_to_string(found.join("origin.txt"))?.trim());
         fs::create_dir_all(&origin)?;
-        let file = format!("{id}.jsonl");
-        if origin.join(&file).exists() {
-            return Err(anyhow!("元の場所に同じセッションが既にあります"));
+        let name = fs::read_to_string(found.join("name.txt")).map(|s| s.trim().to_string()).unwrap_or_else(|_| format!("{id}.jsonl"));
+        if origin.join(&name).exists() {
+            return Err(anyhow!("{}", crate::i18n::tr("元の場所に同じセッションが既にあります", "the session already exists at its original location")));
         }
-        fs::rename(found.join(&file), origin.join(&file))?;
+        fs::rename(found.join(&name), origin.join(&name))?;
         if found.join(id).is_dir() {
             let _ = fs::rename(found.join(id), origin.join(id));
         }
@@ -848,15 +1113,17 @@ impl State {
         Ok(())
     }
 
-    /// Empty trash entries older than `max_age`.
+    /// Empty trash entries older than `max_age` (also in the pre-0.2 location).
     pub fn purge_trash(&self, max_age: Duration) {
-        let Ok(rd) = fs::read_dir(self.trash_dir()) else { return };
         let cutoff = now_ms().saturating_sub(max_age.as_millis() as u64);
-        for e in rd.flatten() {
-            let name = e.file_name().to_string_lossy().into_owned();
-            let ms: u64 = name.split('-').next().and_then(|s| s.parse().ok()).unwrap_or(u64::MAX);
-            if ms < cutoff {
-                let _ = fs::remove_dir_all(e.path());
+        for dir in [self.trash_dir(), self.claude_dir.join("oyakata-trash")] {
+            let Ok(rd) = fs::read_dir(&dir) else { continue };
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let ms: u64 = name.split('-').next().and_then(|s| s.parse().ok()).unwrap_or(u64::MAX);
+                if ms < cutoff {
+                    let _ = fs::remove_dir_all(e.path());
+                }
             }
         }
     }
@@ -885,7 +1152,8 @@ impl State {
 
     /// (id, transcript path) of every session, most recently active first.
     pub fn transcript_files(&self) -> Vec<(String, PathBuf)> {
-        let mut v: Vec<(&SessionEntry, Option<&String>)> = self.sessions.values().map(|e| (e, e.transcript.meta.last_at.as_ref())).collect();
+        let mut v: Vec<(&SessionEntry, Option<&String>)> =
+            self.sessions.values().filter(|e| e.agent == AgentKind::Claude).map(|e| (e, e.transcript.meta.last_at.as_ref())).collect();
         v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.0.mtime_ms.cmp(&a.0.mtime_ms)));
         v.into_iter().map(|(e, _)| (e.id.clone(), e.path.clone())).collect()
     }

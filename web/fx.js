@@ -10,9 +10,9 @@
 
   // ------------------------------------------------------------------ 判子
   const STAMPS = {
-    approve: { top: '親方', main: '承認', cls: 'shu' },
-    answer: { top: '親方', main: '回答', cls: 'shu' },
-    deny: { top: '', main: '差戻', cls: 'ai square' },
+    approve: { top: t('親方'), main: t('承認'), cls: 'shu' },
+    answer: { top: t('親方'), main: t('回答'), cls: 'shu' },
+    deny: { top: '', main: t('差戻'), cls: 'ai square' },
   };
   /// Press a seal over `el` (or at its centre if `el` is about to disappear).
   function stamp(el, kind = 'approve') {

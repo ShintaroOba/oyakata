@@ -542,15 +542,30 @@ impl Transcript {
         }
     }
 
+    /// Record a file edit. Tool names differ per agent (Claude `Edit`/`Write`, Gemini
+    /// `replace`/`write_file`, Copilot `edit`/`create`, OpenCode `edit`/`write`, Codex
+    /// `apply_patch` with the files inside the patch text), so matching is by lower-cased name.
     fn note_edit(&mut self, name: &str, input: &Value) {
-        let path_key = match name {
-            "Edit" | "MultiEdit" | "Write" => "file_path",
-            "NotebookEdit" => "notebook_path",
-            _ => return,
-        };
-        let Some(path) = input.get(path_key).and_then(Value::as_str) else { return };
+        let lname = name.to_ascii_lowercase();
+        if lname == "apply_patch" {
+            for (path, added) in patch_files(input) {
+                let stat = self.meta.edited_files.entry(path).or_default();
+                if added {
+                    stat.writes += 1;
+                } else {
+                    stat.edits += 1;
+                }
+            }
+            return;
+        }
+        let is_write = matches!(lname.as_str(), "write" | "write_file" | "create" | "create_file" | "write_to_file");
+        let is_edit = matches!(lname.as_str(), "edit" | "multiedit" | "notebookedit" | "edit_file" | "replace" | "str_replace_editor" | "str_replace_based_edit_tool");
+        if !is_write && !is_edit {
+            return;
+        }
+        let Some(path) = tool_path(input) else { return };
         let stat = self.meta.edited_files.entry(path.to_string()).or_default();
-        if name == "Write" {
+        if is_write {
             stat.writes += 1;
         } else {
             stat.edits += 1;
@@ -683,45 +698,90 @@ fn looks_meta(text: &str) -> bool {
 }
 
 /// One-line label for a tool call chip, chosen per tool.
+/// One line that says what a tool call does. Names are matched lower-cased so the same
+/// rules cover every agent (`Bash` / `bash` / `powershell` / `run_shell_command` / `shell`).
 pub fn summarize_tool(name: &str, input: &Value) -> String {
     let s = |k: &str| input.get(k).and_then(Value::as_str).map(str::to_string);
     let first_line = |v: String| v.lines().next().unwrap_or("").trim().to_string();
-    let out = match name {
-        "Bash" | "PowerShell" => s("description").or_else(|| s("command").map(first_line)),
-        "Read" | "Edit" | "Write" | "MultiEdit" | "NotebookEdit" => s("file_path").or_else(|| s("notebook_path")),
-        "Grep" => s("pattern").map(|p| match s("path") {
+    // Codex passes shell commands as an argv array.
+    let command = || {
+        s("command").or_else(|| {
+            input
+                .get("command")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" "))
+        })
+    };
+    let lname = name.to_ascii_lowercase();
+    let out = match lname.as_str() {
+        "bash" | "powershell" | "shell" | "exec_command" | "run_shell_command" | "local_shell" | "terminal" | "execute_command" => {
+            s("description").or_else(|| command().map(first_line))
+        }
+        "read" | "edit" | "write" | "multiedit" | "notebookedit" | "read_file" | "write_file" | "replace" | "create" | "view" | "edit_file" | "str_replace_editor" | "str_replace_based_edit_tool" | "write_to_file" | "list_directory" => {
+            tool_path(input).map(str::to_string)
+        }
+        "apply_patch" => {
+            let files: Vec<String> = patch_files(input).into_iter().map(|(p, _)| p).collect();
+            (!files.is_empty()).then(|| files.join(", "))
+        }
+        "grep" | "grep_search" | "search_file_content" => s("pattern").or_else(|| s("query")).map(|p| match s("path") {
             Some(path) => format!("{p}  in {path}"),
             None => p,
         }),
-        "Glob" => s("pattern"),
-        "Agent" | "Task" => s("description").or_else(|| s("prompt").map(first_line)),
-        "Skill" => s("skill").map(|sk| match s("args") {
+        "glob" => s("pattern"),
+        "agent" | "task" => s("description").or_else(|| s("prompt").map(first_line)),
+        "skill" => s("skill").or_else(|| s("name")).map(|sk| match s("args") {
             Some(a) if !a.is_empty() => format!("/{sk} {a}"),
             _ => format!("/{sk}"),
         }),
-        "WebFetch" => s("url"),
-        "WebSearch" => s("query"),
-        "AskUserQuestion" => input
+        "webfetch" | "web_fetch" | "fetch" => s("url"),
+        "websearch" | "web_search" | "google_web_search" => s("query"),
+        "update_plan" => input.get("plan").and_then(Value::as_array).map(|t| format!("{} steps", t.len())),
+        "askuserquestion" => input
             .get("questions")
             .and_then(Value::as_array)
             .and_then(|q| q.first())
             .and_then(|q| q.get("question"))
             .and_then(Value::as_str)
             .map(str::to_string),
-        "Artifact" => {
+        "artifact" => {
             let action = s("action").unwrap_or_else(|| "publish".into());
             let target = s("file_path").or_else(|| s("url")).or_else(|| s("title")).unwrap_or_default();
             Some(format!("{action} {target}").trim().to_string())
         }
-        "TodoWrite" => input
+        "todowrite" => input
             .get("todos")
             .and_then(Value::as_array)
             .map(|t| format!("{} items", t.len())),
-        "ToolSearch" => s("query"),
+        "toolsearch" => s("query"),
         _ => None,
     };
     let out = out.unwrap_or_else(|| first_string(input).unwrap_or_default());
     snippet(&first_line(out), 140)
+}
+
+/// The file a file tool works on, under whichever key the agent uses.
+fn tool_path(input: &Value) -> Option<&str> {
+    ["file_path", "notebook_path", "path", "filePath", "file", "absolute_path", "target_file"]
+        .iter()
+        .find_map(|k| input.get(*k).and_then(Value::as_str))
+        .filter(|p| !p.is_empty())
+}
+
+/// Files named in a Codex `apply_patch` input: `(path, added)` for each
+/// `*** Add File:` / `*** Update File:` / `*** Delete File:` header.
+fn patch_files(input: &Value) -> Vec<(String, bool)> {
+    let text = input.get("input").or_else(|| input.get("patch")).and_then(Value::as_str).unwrap_or("");
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(p) = line.strip_prefix("*** Add File: ") {
+            out.push((p.trim().to_string(), true));
+        } else if let Some(p) = line.strip_prefix("*** Update File: ").or_else(|| line.strip_prefix("*** Delete File: ")) {
+            out.push((p.trim().to_string(), false));
+        }
+    }
+    out
 }
 
 fn first_string(v: &Value) -> Option<String> {
@@ -874,5 +934,22 @@ mod tests {
         assert_eq!(summarize_tool("Skill", &serde_json::json!({"skill":"crit","args":"plan.md"})), "/crit plan.md");
         assert_eq!(summarize_tool("Bash", &serde_json::json!({"command":"cargo build\n--release"})), "cargo build");
         assert_eq!(summarize_tool("Mystery", &serde_json::json!({"n":1,"q":"hello"})), "hello");
+        assert_eq!(summarize_tool("powershell", &serde_json::json!({"command":"echo hi","description":"Say hi"})), "Say hi");
+        assert_eq!(summarize_tool("shell", &serde_json::json!({"command":["ls","-la"]})), "ls -la");
+        assert_eq!(summarize_tool("write_file", &serde_json::json!({"file_path":"/a.txt","content":"x"})), "/a.txt");
+        assert_eq!(summarize_tool("apply_patch", &serde_json::json!({"input":"*** Begin Patch\n*** Update File: src/a.rs\n*** Add File: b.rs\n*** End Patch"})), "src/a.rs, b.rs");
+    }
+
+    #[test]
+    fn edits_are_recognized_across_agents() {
+        let (t, _) = feed_all(
+            &[
+                r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"a","name":"replace","input":{"file_path":"/p/x.ts","old_string":"1","new_string":"2"}},{"type":"tool_use","id":"b","name":"create","input":{"path":"/p/y.ts","content":"z"}},{"type":"tool_use","id":"c","name":"apply_patch","input":{"input":"*** Begin Patch\n*** Add File: /p/z.rs\n+fn main() {}\n*** End Patch"}}]}}"#,
+            ],
+            false,
+        );
+        assert_eq!(t.meta.edited_files["/p/x.ts"].edits, 1);
+        assert_eq!(t.meta.edited_files["/p/y.ts"].writes, 1);
+        assert_eq!(t.meta.edited_files["/p/z.rs"].writes, 1);
     }
 }

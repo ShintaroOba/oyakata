@@ -23,7 +23,7 @@
       </div>
     </header>
     <div class="sb-switch" id="sb-switch">
-      <button class="sw" data-view="sessions" title="セッション一覧">セッション</button>
+      <button class="sw" data-view="sessions" title="セッション一覧" data-i18n="セッション一覧">セッション</button>
       <button class="sw" data-view="explorer" title="プロジェクトツリー（Ctrl+Shift+E）">ツリー</button>
       <button class="sw" data-view="search" title="全文検索（Ctrl+Shift+F）">検索</button>
       <button class="sw" data-view="git" title="Git（Ctrl+Shift+G）">Git</button>
@@ -84,6 +84,7 @@
 
   <div id="settings" class="popover settings" hidden>
     <h3>設定</h3>
+    <label class="field"><span>言語 / Language</span><select id="set-lang"><option value="ja">日本語</option><option value="en">English</option></select></label>
     <label class="field"><span>テーマ</span><select id="set-theme"></select></label>
     <div class="field"><span>アクセント</span><div id="set-accent" class="swatches"></div></div>
     <label class="field"><span>文字サイズ</span><select id="set-font"><option value="13">小</option><option value="14">標準</option><option value="15">大</option><option value="16">特大</option></select></label>
@@ -93,6 +94,7 @@
     <label class="field check"><input type="checkbox" id="set-whimsy"> 親方ことば（作業中の掛け声・労いのひとこと）</label>
     <label class="field check"><input type="checkbox" id="set-stamp"> 承認したら判子を押す</label>
     <div class="field check"><label><input type="checkbox" id="set-sound"> 終わったら拍子木を鳴らす</label><button class="btn small" id="set-sound-test" type="button">試しに鳴らす</button></div>
+    <div class="field agents"><span>エージェント</span><div id="set-agents" class="agents-list"></div></div>
     <div class="field"><span>ショートカット</span><button class="btn" id="set-keys" type="button">一覧を見る</button></div>
     <div class="field"><span>レイアウト</span><button class="btn" id="set-reset-layout">ペイン配置を初期化</button></div>
   </div>
@@ -104,6 +106,8 @@
 <script src="/assets/vendor/mermaid.min.js"></script>
 <script src="/assets/vendor/codemirror.js"></script>
 <script src="/assets/vendor/cm-modes.js"></script>
+<script src="/assets/i18n-en.js"></script>
+<script src="/assets/i18n.js"></script>
 <script src="/assets/app.js"></script>
 <script src="/assets/workbench.js"></script>
 <script src="/assets/fx.js"></script>

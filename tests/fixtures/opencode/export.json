@@ -1,0 +1,153 @@
+{
+ "info": {
+  "id": "ses_ee6e63f10ffe0KWeCColnE8O2j",
+  "slug": "curious-harbor",
+  "projectID": "global",
+  "directory": "C:\\Temp\\agents\\work",
+  "path": "",
+  "title": "Hello from the fake model. 1 + 1 = 2.",
+  "agent": "build",
+  "model": {
+   "id": "fake-1",
+   "providerID": "fake",
+   "variant": "default"
+  },
+  "version": "1.18.35",
+  "summary": {
+   "additions": 0,
+   "deletions": 0,
+   "files": 0
+  },
+  "cost": 0,
+  "tokens": {
+   "input": 12,
+   "output": 9,
+   "reasoning": 0,
+   "cache": {
+    "read": 0,
+    "write": 0
+   }
+  },
+  "permission": [
+   {
+    "permission": "question",
+    "pattern": "*",
+    "action": "deny"
+   },
+   {
+    "permission": "plan_enter",
+    "pattern": "*",
+    "action": "deny"
+   },
+   {
+    "permission": "plan_exit",
+    "pattern": "*",
+    "action": "deny"
+   }
+  ],
+  "time": {
+   "created": 1791422480623,
+   "updated": 1791422504047
+  }
+ },
+ "messages": [
+  {
+   "info": {
+    "role": "user",
+    "time": {
+     "created": 1791422480706
+    },
+    "agent": "build",
+    "model": {
+     "providerID": "fake",
+     "modelID": "fake-1"
+    },
+    "summary": {
+     "diffs": []
+    },
+    "id": "msg_11919c142001VKZTvT7sgaSsee",
+    "sessionID": "ses_ee6e63f10ffe0KWeCColnE8O2j"
+   },
+   "parts": [
+    {
+     "type": "text",
+     "text": "\"say hi\"",
+     "id": "prt_11919c188001Q7AS9aN81DxNkt",
+     "sessionID": "ses_ee6e63f10ffe0KWeCColnE8O2j",
+     "messageID": "msg_11919c142001VKZTvT7sgaSsee"
+    }
+   ]
+  },
+  {
+   "info": {
+    "parentID": "msg_11919c142001VKZTvT7sgaSsee",
+    "role": "assistant",
+    "mode": "build",
+    "agent": "build",
+    "path": {
+     "cwd": "C:\\Temp\\agents\\work",
+     "root": "C:\\Temp\\agents\\work"
+    },
+    "cost": 0,
+    "tokens": {
+     "total": 21,
+     "input": 12,
+     "output": 9,
+     "reasoning": 0,
+     "cache": {
+      "write": 0,
+      "read": 0
+     }
+    },
+    "modelID": "fake-1",
+    "providerID": "fake",
+    "time": {
+     "created": 1791422482726,
+     "completed": 1791422503917
+    },
+    "finish": "stop",
+    "id": "msg_11919c925001iAogUEcrKVhSKN",
+    "sessionID": "ses_ee6e63f10ffe0KWeCColnE8O2j"
+   },
+   "parts": [
+    {
+     "snapshot": "6e0b7b5ed2674d9ba74a857500fc51a4882ea140",
+     "type": "step-start",
+     "id": "prt_1191a168f001oqG4qyuYOcuRsg",
+     "sessionID": "ses_ee6e63f10ffe0KWeCColnE8O2j",
+     "messageID": "msg_11919c925001iAogUEcrKVhSKN"
+    },
+    {
+     "type": "text",
+     "text": "Hello from the fake model. 1 + 1 = 2.",
+     "time": {
+      "start": 1791422502555,
+      "end": 1791422502568
+     },
+     "id": "prt_1191a169b001Ac6mFjczFfPWvu",
+     "sessionID": "ses_ee6e63f10ffe0KWeCColnE8O2j",
+     "messageID": "msg_11919c925001iAogUEcrKVhSKN"
+    },
+    {
+     "reason": "stop",
+     "snapshot": "6e0b7b5ed2674d9ba74a857500fc51a4882ea140",
+     "type": "step-finish",
+     "tokens": {
+      "total": 21,
+      "input": 12,
+      "output": 9,
+      "reasoning": 0,
+      "cache": {
+       "write": 0,
+       "read": 0
+      }
+     },
+     "cost": 0,
+     "id": "prt_1191a1952001Z5WsChM2kJlJTs",
+     "sessionID": "ses_ee6e63f10ffe0KWeCColnE8O2j",
+     "messageID": "msg_11919c925001iAogUEcrKVhSKN"
+    }
+   ]
+  }
+ ]
+}

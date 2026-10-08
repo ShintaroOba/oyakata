@@ -61,10 +61,10 @@
     clearTimeout(sv.timer);
     if (!q.trim()) { out.innerHTML = ''; sum.textContent = ''; return; }
     const my = ++sv.seq;
-    sum.innerHTML = '<span class="spinner"></span> 検索中…';
+    sum.innerHTML = t('<span class="spinner"></span> 検索中…');
     if (sv.scope === 'sessions') return execSessions(q, my);
     const root = state.activeRepo;
-    if (!root) { sum.textContent = 'リポジトリを選んでください'; out.innerHTML = ''; return; }
+    if (!root) { sum.textContent = t('リポジトリを選んでください'); out.innerHTML = ''; return; }
     sv.lastRoot = root;
     let r;
     try {
@@ -72,7 +72,7 @@
     } catch (e) {
       if (my !== sv.seq) return;
       sum.textContent = '';
-      out.innerHTML = `<div class="loading err">${esc(/not a git/.test(e.message) ? 'Git リポジトリではないため、ファイルの全文検索は使えません' : e.message)}</div>`;
+      out.innerHTML = `<div class="loading err">${esc(/not a git/.test(e.message) ? t('Git リポジトリではないため、ファイルの全文検索は使えません') : e.message)}</div>`;
       return;
     }
     if (my !== sv.seq) return;
@@ -83,18 +83,18 @@
     }
     const re = marker(q);
     const repoName = state.repos.find((x) => norm(x.root) === norm(root))?.name || basename(root);
-    sum.innerHTML = `${(r.matches || []).length.toLocaleString()} 件 · ${groups.size} ファイル <span class="muted">（${esc(repoName)}）</span>${r.truncated ? ' <span class="sv-warn">上限で打ち切り</span>' : ''}`;
+    sum.innerHTML = `${(r.matches || []).length.toLocaleString()} ${t("件 ·")} ${groups.size} ${t("ファイル")} <span class="muted">（${esc(repoName)}）</span>${r.truncated ? t(' <span class="sv-warn">上限で打ち切り</span>') : ''}`;
     out.innerHTML = [...groups.entries()].map(([path, ms]) => {
       const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
       const open = !sv.collapsed.has(path);
       return `<div class="sv-file${open ? '' : ' closed'}" data-path="${esc(path)}"><div class="sv-fhead" draggable="true"><span class="caret">${open ? '▾' : '▸'}</span><span class="sv-fname">${esc(basename(path))}</span><span class="sv-fdir">${esc(dir)}</span><span class="sv-n">${ms.length}</span></div>
         <div class="sv-hits">${ms.slice(0, 200).map((m) => `<div class="sv-hit" data-line="${m.line}" data-col="${firstCol(m.text, re)}"><span class="ln">${m.line}</span><span class="tx">${highlight(m.text.trim(), re)}</span></div>`).join('')}</div></div>`;
-    }).join('') || '<div class="empty-note">見つかりませんでした</div>';
+    }).join('') || t('<div class="empty-note">見つかりませんでした</div>');
   }
   async function execSessions(q, my) {
     const out = $('#sv-results');
     const sum = $('#sv-summary');
-    if (q.trim().length < 2) { sum.textContent = '2 文字以上で検索してください'; out.innerHTML = ''; return; }
+    if (q.trim().length < 2) { sum.textContent = t('2 文字以上で検索してください'); out.innerHTML = ''; return; }
     let r;
     try { r = await api.get(`/api/search/sessions?q=${encodeURIComponent(q.trim())}`); }
     catch (e) { if (my === sv.seq) { sum.textContent = ''; out.innerHTML = `<div class="loading err">${esc(e.message)}</div>`; } return; }
@@ -105,12 +105,12 @@
       groups.get(h.session).push(h);
     }
     const re = marker(q.trim());
-    sum.innerHTML = `${(r.hits || []).length} 件 · ${groups.size} セッション <span class="muted">（すべての会話）</span>`;
+    sum.innerHTML = `${(r.hits || []).length} ${t("件 ·")} ${groups.size} ${t("セッション")} <span class="muted">${t("（すべての会話）")}</span>`;
     out.innerHTML = [...groups.entries()].map(([id, hs]) => {
       const s = state.byId.get(id);
       return `<div class="sv-file" data-session="${esc(id)}"><div class="sv-fhead"><span class="caret">▾</span><span class="sv-fname">${esc(s ? sessionTitle(s) : id)}</span><span class="sv-fdir">${esc(s?.repo?.name || '')}${s?.last_at ? ` · ${esc(ago(s.last_at))}` : ''}</span><span class="sv-n">${hs.length}</span></div>
-        <div class="sv-hits">${hs.map((h) => `<div class="sv-hit" data-ts="${esc(h.ts || '')}"><span class="ln ${h.role}">${h.role === 'user' ? 'あなた' : 'Claude'}</span><span class="tx">${highlight(h.snippet, re)}</span></div>`).join('')}</div></div>`;
-    }).join('') || '<div class="empty-note">見つかりませんでした</div>';
+        <div class="sv-hits">${hs.map((h) => `<div class="sv-hit" data-ts="${esc(h.ts || '')}"><span class="ln ${h.role}">${h.role === 'user' ? t('あなた') : 'AI'}</span><span class="tx">${highlight(h.snippet, re)}</span></div>`).join('')}</div></div>`;
+    }).join('') || t('<div class="empty-note">見つかりませんでした</div>');
   }
 
   /// Search from elsewhere (references, Ctrl+Shift+F with a selection).

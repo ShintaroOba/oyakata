@@ -7,19 +7,19 @@
   const { $, esc, api, state, bus, sessionTitle, fmtDuration, fmtTokens, shortModel, stripCwd, statusLabel, contextWindow } = OY;
 
   const ROLES = {
-    Explore: { icon: '🔍', label: '調べ役' },
-    Plan: { icon: '📐', label: '段取り役' },
-    'general-purpose': { icon: '🛠', label: '何でも屋' },
-    claude: { icon: '🤖', label: '職人' },
-    'statusline-setup': { icon: '⚙', label: '設定係' },
+    Explore: { icon: '🔍', label: t('調べ役') },
+    Plan: { icon: '📐', label: t('段取り役') },
+    'general-purpose': { icon: '🛠', label: t('何でも屋') },
+    claude: { icon: '🤖', label: t('職人') },
+    'statusline-setup': { icon: '⚙', label: t('設定係') },
   };
-  const role = (t) => ROLES[t] || { icon: '🧑‍🔧', label: '職人' };
+  const role = (t) => ROLES[t] || { icon: '🧑‍🔧', label: t('職人') };
   const STATUS = {
-    running: { label: '作業中', cls: 'running' },
-    pending: { label: '準備中', cls: 'pending' },
-    done: { label: '完了', cls: 'done' },
-    error: { label: '失敗', cls: 'error' },
-    stopped: { label: '中断', cls: 'stopped' },
+    running: { label: t('作業中'), cls: 'running' },
+    pending: { label: t('準備中'), cls: 'pending' },
+    done: { label: t('完了'), cls: 'done' },
+    error: { label: t('失敗'), cls: 'error' },
+    stopped: { label: t('中断'), cls: 'stopped' },
   };
   /// Agents started within this many seconds of each other count as one wave (parallel).
   const WAVE_GAP_S = 20;
@@ -33,26 +33,26 @@
     const active = a.status === 'running' || a.status === 'pending';
     const elapsed = active ? since(a.started_at) : (a.started_at && a.last_at ? (new Date(a.last_at) - new Date(a.started_at)) / 1000 : null);
     let now = '';
-    if (a.status === 'running') now = `<div class="tc-now"><span class="lbl">いま</span>${esc(a.last_tool ? stripCwd(a.last_tool, cwd) : '考え中…')}</div>`;
-    else if (a.status === 'pending') now = '<div class="tc-now"><span class="lbl">いま</span>起動しています…</div>';
+    if (a.status === 'running') now = `<div class="tc-now"><span class="lbl">${t("いま")}</span>${esc(a.last_tool ? stripCwd(a.last_tool, cwd) : t('考え中…'))}</div>`;
+    else if (a.status === 'pending') now = t('<div class="tc-now"><span class="lbl">いま</span>起動しています…</div>');
     else {
       const report = a.status === 'error' ? a.result : (a.last_text || a.result);
-      if (report) now = `<div class="tc-res"><span class="lbl">${a.status === 'error' ? 'エラー' : '報告'}</span>${esc(oneLine(report, 200))}</div>`;
+      if (report) now = `<div class="tc-res"><span class="lbl">${a.status === 'error' ? t('エラー') : t('報告')}</span>${esc(oneLine(report, 200))}</div>`;
     }
     const meta = [
       a.agent_type ? `<span class="tc-type">${esc(a.agent_type)}</span>` : '',
       a.tool_calls ? `🔧 ${a.tool_calls}` : '',
       a.context_tokens ? `ctx ${fmtTokens(a.context_tokens)}` : '',
       a.model ? esc(shortModel(a.model)) : '',
-      a.background ? '裏で実行' : '',
+      a.background ? t('裏で実行') : '',
     ].filter(Boolean).join(' · ');
     const kids = depth < 3 ? all.filter((c) => c.parent === a.agent_id && a.agent_id) : [];
     return `<div class="tcard ${st.cls}" data-agent="${esc(a.agent_id || '')}" title="${esc(a.prompt || '')}">
       <div class="tc-top"><span class="tc-icon">${r.icon}</span><span class="tc-role">${esc(r.label)}</span><span class="spacer"></span><span class="tc-st">${a.status === 'running' ? '<span class="spinner"></span>' : ''}${st.label}${elapsed != null ? ` · ${fmtDuration(elapsed)}` : ''}</span></div>
-      <div class="tc-desc">${esc(a.description || '（役割の説明なし）')}</div>
+      <div class="tc-desc">${esc(a.description || t('（役割の説明なし）'))}</div>
       ${now}
-      <div class="tc-meta"><span>${meta}</span>${a.agent_id ? '<span class="spacer"></span><span class="tc-open">会話 →</span>' : ''}</div>
-      ${kids.length ? `<div class="tc-kids"><div class="tk-label">この職人が振った仕事</div>${kids.map((k) => cardHtml(k, cwd, all, depth + 1)).join('')}</div>` : ''}
+      <div class="tc-meta"><span>${meta}</span>${a.agent_id ? t('<span class="spacer"></span><span class="tc-open">会話 →</span>') : ''}</div>
+      ${kids.length ? `<div class="tc-kids"><div class="tk-label">${t("この職人が振った仕事")}</div>${kids.map((k) => cardHtml(k, cwd, all, depth + 1)).join('')}</div>` : ''}
     </div>`;
   }
 
@@ -73,7 +73,7 @@
     const sid = desc.data.session;
     const el = document.createElement('div');
     el.className = 'ev team-view';
-    el.innerHTML = '<div class="loading">読み込み中…</div>';
+    el.innerHTML = t('<div class="loading">読み込み中…</div>');
     let agents = [];
     let visible = true;
     let timer = null;
@@ -99,33 +99,33 @@
       const failed = all.filter((a) => a.status === 'error').length;
       const used = s?.context_tokens || 0;
       const win = contextWindow(s?.model, s?.context_window, used);
-      const leadNow = s?.status === 'busy' && s.last_tool ? `<div class="tc-now"><span class="lbl">いま</span>${esc(stripCwd(s.last_tool, cwd))}</div>`
-        : s?.status === 'waiting' ? '<div class="tc-now"><span class="lbl">いま</span>親方の判断を待っています</div>' : '';
+      const leadNow = s?.status === 'busy' && s.last_tool ? `<div class="tc-now"><span class="lbl">${t("いま")}</span>${esc(stripCwd(s.last_tool, cwd))}</div>`
+        : s?.status === 'waiting' ? t('<div class="tc-now"><span class="lbl">いま</span>親方の判断を待っています</div>') : '';
       const lead = `<div class="tcard lead ${s?.status || 'ended'}" data-lead="1">
-        <div class="tc-top"><span class="tc-icon">🏯</span><span class="tc-role">棟梁</span><span class="tc-sub">メインの Claude</span><span class="spacer"></span><span class="tc-st">${s?.status === 'busy' ? '<span class="spinner"></span>' : ''}${esc(statusLabel(s?.status))}</span></div>
+        <div class="tc-top"><span class="tc-icon">🏯</span><span class="tc-role">${t("棟梁")}</span><span class="tc-sub">${t("メインの")} ${esc(OY.agentLabel(s?.agent))}</span><span class="spacer"></span><span class="tc-st">${s?.status === 'busy' ? '<span class="spinner"></span>' : ''}${esc(statusLabel(s?.status))}</span></div>
         <div class="tc-desc">${esc(s ? sessionTitle(s) : '')}</div>
         ${leadNow}
-        <div class="tc-meta"><span>${esc([s?.model ? shortModel(s.model) : '', used && win ? `ctx ${Math.round((used / win) * 100)}%` : '', s?.tool_calls ? `🔧 ${s.tool_calls}` : ''].filter(Boolean).join(' · '))}</span><span class="spacer"></span><span class="tc-open">会話 →</span></div>
+        <div class="tc-meta"><span>${esc([s?.model ? shortModel(s.model) : '', used && win ? `ctx ${Math.round((used / win) * 100)}%` : '', s?.tool_calls ? `🔧 ${s.tool_calls}` : ''].filter(Boolean).join(' · '))}</span><span class="spacer"></span><span class="tc-open">${t("会話 →")}</span></div>
       </div>`;
       const top = all.filter((a) => a.parent === 'main' || !all.some((p) => p.agent_id && p.agent_id === a.parent));
       const ws = waves(top);
       const lanes = ws.map((w, i) => {
         const wr = w.agents.filter((a) => a.status === 'running' || a.status === 'pending').length;
-        const when = w.t ? new Date(w.t).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '';
-        const label = `第${i + 1}陣${w.agents.length > 1 ? ` · ${w.agents.length} 人で並行` : ''}`;
-        return `<section class="lane${wr ? ' running' : ''}"><div class="lane-head"><span class="lane-title">${esc(label)}</span>${wr ? `<span class="lane-run"><span class="spinner"></span>${wr} 人作業中</span>` : ''}<span class="spacer"></span><span class="lane-time">${when}</span></div>
+        const when = w.t ? new Date(w.t).toLocaleTimeString(OY_I18N.locale(), { hour: '2-digit', minute: '2-digit' }) : '';
+        const label = `${t("第")}${i + 1}${t("陣")}${w.agents.length > 1 ? ` · ${w.agents.length} ${t("人で並行")}` : ''}`;
+        return `<section class="lane${wr ? ' running' : ''}"><div class="lane-head"><span class="lane-title">${esc(label)}</span>${wr ? `<span class="lane-run"><span class="spinner"></span>${wr} ${t("人作業中")}</span>` : ''}<span class="spacer"></span><span class="lane-time">${when}</span></div>
           <div class="lane-cards">${w.agents.map((a) => cardHtml(a, cwd, all, 0)).join('')}</div></section>`;
       }).join('');
       el.innerHTML = `
-        <div class="ev-bar"><span class="path">体制図 — ${esc(s ? sessionTitle(s) : sid)}</span>
-          <span class="team-counts">${all.length ? `職人 ${all.length} 人` : ''}${running ? ` · <b class="c-run">作業中 ${running}</b>` : ''}${done ? ` · 完了 ${done}` : ''}${failed ? ` · <b class="c-err">失敗 ${failed}</b>` : ''}</span>
-          <button type="button" class="btn small act" data-act="chat">会話へ</button><button type="button" class="btn small act" data-act="reload">更新</button></div>
+        <div class="ev-bar"><span class="path">${t("体制図 —")} ${esc(s ? sessionTitle(s) : sid)}</span>
+          <span class="team-counts">${all.length ? `${t("職人")} ${all.length} ${t("人")}` : ''}${running ? ` · <b class="c-run">${t("作業中")} ${running}</b>` : ''}${done ? ` ${t("· 完了")} ${done}` : ''}${failed ? ` · <b class="c-err">${t("失敗")} ${failed}</b>` : ''}</span>
+          <button type="button" class="btn small act" data-act="chat">${t("会話へ")}</button><button type="button" class="btn small act" data-act="reload">${t("更新")}</button></div>
         <div class="ev-content"><div class="org">
-          <div class="org-top"><div class="tcard boss"><div class="tc-top"><span class="tc-icon">👤</span><span class="tc-role">親方</span><span class="tc-sub">あなた</span></div></div></div>
+          <div class="org-top"><div class="tcard boss"><div class="tc-top"><span class="tc-icon">👤</span><span class="tc-role">${t("親方")}</span><span class="tc-sub">${t("あなた")}</span></div></div></div>
           <div class="org-link"></div>
           <div class="org-top">${lead}</div>
-          ${all.length ? `<div class="org-link"></div><div class="lanes">${lanes}</div>` : '<div class="org-link"></div><div class="tempty">まだ職人（サブエージェント）はいません。Claude が Agent ツールで仕事を振ると、ここに並びます。</div>'}
-          <div class="team-legend">カードをクリックすると、その職人の会話を開きます。同じ頃に振られた仕事は「陣」にまとめています（並行作業）。カードにマウスを置くと依頼内容が見られます。</div>
+          ${all.length ? `<div class="org-link"></div><div class="lanes">${lanes}</div>` : `<div class="org-link"></div><div class="tempty">${t("まだ職人（サブエージェント）はいません。")}${esc(OY.agentLabel(s?.agent))}${t(" がサブエージェントに仕事を振ると、ここに並びます。")}</div>`}
+          <div class="team-legend">${t("カードをクリックすると、その職人の会話を開きます。同じ頃に振られた仕事は「陣」にまとめています（並行作業）。カードにマウスを置くと依頼内容が見られます。")}</div>
         </div></div>`;
     }
     async function load() {
@@ -178,7 +178,7 @@
 
   function open(sessionId, opts) {
     const s = state.byId.get(sessionId);
-    return OY.wb.open({ kind: 'team', key: 'team:' + sessionId, title: `体制図 · ${s ? sessionTitle(s).slice(0, 24) : ''}`, icon: '👥', data: { session: sessionId } }, opts);
+    return OY.wb.open({ kind: 'team', key: 'team:' + sessionId, title: `${t("体制図 ·")} ${s ? sessionTitle(s).slice(0, 24) : ''}`, icon: '👥', data: { session: sessionId } }, opts);
   }
 
   OY.wb.registerKind('team', teamView);

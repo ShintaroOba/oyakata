@@ -69,7 +69,7 @@ fn git_exe() -> &'static Path {
 
 fn spawn_error(e: std::io::Error, args: &[&str]) -> anyhow::Error {
     if e.kind() == std::io::ErrorKind::NotFound {
-        anyhow::anyhow!("git が見つかりません（git {}）。Git をインストールするか、OYAKATA_GIT に git の場所を設定して OYAKATA を再起動してください。", args.first().unwrap_or(&""))
+        anyhow::anyhow!("{}", if crate::i18n::is_ja() { format!("git が見つかりません（git {}）。Git をインストールするか、OYAKATA_GIT に git の場所を設定して OYAKATA を再起動してください。", args.first().unwrap_or(&"")) } else { format!("git was not found (git {}). Install Git, or point OYAKATA_GIT at it and restart OYAKATA.", args.first().unwrap_or(&"")) })
     } else {
         anyhow::anyhow!("run git {}: {e}", args.join(" "))
     }
@@ -555,7 +555,7 @@ const GREP_LINE_CHARS: usize = 400;
 pub fn grep(root: &Path, o: &GrepOptions) -> Result<(Vec<GrepMatch>, bool)> {
     use std::io::BufRead;
     if o.pattern.is_empty() {
-        bail!("検索語が空です");
+        bail!("{}", crate::i18n::tr("検索語が空です", "the search text is empty"));
     }
     let mut args: Vec<String> = ["grep", "-n", "--null", "-I", "--untracked", "--no-color"].iter().map(|s| s.to_string()).collect();
     if !o.case_sensitive {
@@ -685,17 +685,17 @@ pub fn pull(root: &Path) -> Result<String> {
 pub fn clone(url: &str, dest: &Path) -> Result<String> {
     let url = url.trim();
     if url.is_empty() || url.starts_with('-') || url.chars().any(|c| c.is_control() || c.is_whitespace()) {
-        bail!("リポジトリの URL が正しくありません");
+        bail!("{}", crate::i18n::tr("リポジトリの URL が正しくありません", "the repository URL is not valid"));
     }
     if dest.exists() && std::fs::read_dir(dest).map(|mut d| d.next().is_some()).unwrap_or(true) {
-        bail!("{} は既に存在します。別の場所を指定してください。", dest.display());
+        bail!("{}", if crate::i18n::is_ja() { format!("{} は既に存在します。別の場所を指定してください。", dest.display()) } else { format!("{} already exists. Choose another location.", dest.display()) });
     }
-    let parent = dest.parent().filter(|p| !p.as_os_str().is_empty()).context("clone 先のフォルダが正しくありません")?;
+    let parent = dest.parent().filter(|p| !p.as_os_str().is_empty()).context(crate::i18n::tr("clone 先のフォルダが正しくありません", "the clone destination is not valid"))?;
     std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     let dest_s = dest.to_string_lossy().into_owned();
     let out = run_timeout(parent, &["clone", "--quiet", "--", url, &dest_s], Duration::from_secs(15 * 60))?;
     if !out.ok() {
-        bail!("git clone に失敗しました: {}", out.combined());
+        bail!("{}: {}", crate::i18n::tr("git clone に失敗しました", "git clone failed"), out.combined());
     }
     Ok(out.combined())
 }

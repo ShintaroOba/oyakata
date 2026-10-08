@@ -115,15 +115,15 @@ mod imp {
         if let Some(expected) = proc_start {
             match creation_time(pid) {
                 Some(t) if t == expected => {}
-                Some(_) => bail!("pid {pid} は別のプロセスに再利用されています"),
-                None => bail!("pid {pid} のプロセスが見つかりません"),
+                Some(_) => bail!("{}", if crate::i18n::is_ja() { format!("pid {pid} は別のプロセスに再利用されています") } else { format!("pid {pid} was reused by another process") }),
+                None => bail!("{}", if crate::i18n::is_ja() { format!("pid {pid} のプロセスが見つかりません") } else { format!("no process with pid {pid}") }),
             }
         }
         // SAFETY: plain Win32 calls; every pointer passed points at live local data.
         unsafe {
             FreeConsole();
             if AttachConsole(pid) == 0 {
-                bail!("pid {pid} のコンソールに接続できません: {}", std::io::Error::last_os_error());
+                bail!("{}: {}", if crate::i18n::is_ja() { format!("pid {pid} のコンソールに接続できません") } else { format!("cannot attach to the console of pid {pid}") }, std::io::Error::last_os_error());
             }
             let name: Vec<u16> = "CONIN$\0".encode_utf16().collect();
             let input = CreateFileW(
@@ -138,7 +138,7 @@ mod imp {
             if input == INVALID_HANDLE_VALUE {
                 let e = std::io::Error::last_os_error();
                 FreeConsole();
-                bail!("コンソール入力を開けません: {e}");
+                bail!("{}: {e}", crate::i18n::tr("コンソール入力を開けません", "cannot open the console input"));
             }
             let result = (|| -> Result<()> {
                 if escape {
@@ -189,7 +189,7 @@ mod imp {
             let mut n: u32 = 0;
             let chunk = &records[done..];
             if WriteConsoleInputW(input, chunk.as_ptr(), chunk.len() as u32, &mut n) == 0 || n == 0 {
-                bail!("コンソールへの書き込みに失敗しました: {}", std::io::Error::last_os_error());
+                bail!("{}: {}", crate::i18n::tr("コンソールへの書き込みに失敗しました", "writing to the console failed"), std::io::Error::last_os_error());
             }
             done += n as usize;
         }
@@ -228,6 +228,6 @@ mod imp {
     use anyhow::{bail, Result};
 
     pub fn type_keys(_pid: u32, _proc_start: Option<u64>, _text: &str, _escape: bool) -> Result<()> {
-        bail!("ターミナルで稼働中のセッションへの送信は Windows でのみ使えます")
+        bail!("{}", crate::i18n::tr("ターミナルで稼働中のセッションへの送信は Windows でのみ使えます", "typing into a terminal session is only available on Windows"))
     }
 }

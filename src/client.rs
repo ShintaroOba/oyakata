@@ -2,6 +2,7 @@
 //! HTTP crate) plus the `new`, `attach` and `sessions` commands. The daemon remains the
 //! session's owner, so the browser and any number of terminals can take turns typing.
 
+use crate::i18n::{is_ja, tr};
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -143,12 +144,12 @@ fn print_item(it: &Value, echo_user: bool) {
                 return;
             }
             if echo_user {
-                println!("{CYA}あなた>{RST} {}", s(it, "text"));
+                println!("{CYA}{}>{RST} {}", tr("あなた", "You"), s(it, "text"));
             }
         }
         "text" => println!("{YEL}Claude>{RST}\n{}\n", s(it, "md").trim_end()),
         "tool" => println!("  {DIM}⚙ {}: {}{RST}", s(it, "name"), s(it, "summary")),
-        "compact" => println!("  {DIM}(コンテキストを圧縮){RST}"),
+        "compact" => println!("  {DIM}({}){RST}", tr("コンテキストを圧縮", "context compacted")),
         _ => {}
     }
 }
@@ -165,17 +166,17 @@ fn print_pending(p: &Value) {
                     println!("  {}) {}{}", i + 1, s(o, "label"), if s(o, "description").is_empty() { String::new() } else { format!(" — {}", s(o, "description")) });
                 }
             }
-            println!("{BOLD}番号（複数は 1,3 のように）か自由記述 >{RST} ");
+            println!("{BOLD}{}{RST} ", tr("番号（複数は 1,3 のように）か自由記述 >", "Number (1,3 for several) or free text >"));
         }
         "ExitPlanMode" => {
-            println!("{MAG}┌ 計画の承認{RST}");
+            println!("{MAG}┌ {}{RST}", tr("計画の承認", "Plan approval"));
             for l in s(&input, "plan").lines() {
                 println!("{MAG}│{RST} {l}");
             }
-            println!("{MAG}└{RST} {BOLD}[y] 承認して進める  [n] 修正を依頼（続けて理由を入力）>{RST} ");
+            println!("{MAG}└{RST} {BOLD}{}{RST} ", tr("[y] 承認して進める  [n] 修正を依頼（続けて理由を入力）>", "[y] approve and continue  [n] ask for changes (then type why) >"));
         }
         _ => {
-            println!("{MAG}┌ 許可の確認: {tool}{RST} {}", s(p, "description"));
+            println!("{MAG}┌ {}: {tool}{RST} {}", tr("許可の確認", "Permission"), s(p, "description"));
             let detail = match tool {
                 "Bash" | "PowerShell" => s(&input, "command").to_string(),
                 "Read" | "Edit" | "Write" | "MultiEdit" => s(&input, "file_path").to_string(),
@@ -187,8 +188,10 @@ fn print_pending(p: &Value) {
             }
             let suggest = p.get("suggestions").and_then(Value::as_array).map(|a| !a.is_empty()).unwrap_or(false);
             println!(
-                "{MAG}└{RST} {BOLD}[y] 許可  {}[n] 拒否  （それ以外の入力は拒否理由として送る）>{RST} ",
-                if suggest { "[a] 以後も許可  " } else { "" }
+                "{MAG}└{RST} {BOLD}{}{}{}{RST} ",
+                tr("[y] 許可  ", "[y] allow  "),
+                if suggest { tr("[a] 以後も許可  ", "[a] always allow  ") } else { "" },
+                tr("[n] 拒否  （それ以外の入力は拒否理由として送る）>", "[n] deny  (anything else is sent as the reason) >")
             );
         }
     }
@@ -220,7 +223,7 @@ fn answer_for(p: &Value, line: &str) -> Value {
         }
         "ExitPlanMode" => match line {
             "y" | "Y" | "yes" => json!({ "request_id": id, "behavior": "allow" }),
-            "n" | "N" | "no" => json!({ "request_id": id, "behavior": "deny", "message": "修正してください" }),
+            "n" | "N" | "no" => json!({ "request_id": id, "behavior": "deny", "message": tr("修正してください", "Please revise") }),
             other => json!({ "request_id": id, "behavior": "deny", "message": other }),
         },
         _ => match line {
@@ -258,6 +261,7 @@ pub struct StartArgs {
     pub cwd: String,
     pub prompt: String,
     pub resume: Option<String>,
+    pub agent: Option<String>,
     pub model: Option<String>,
     pub mode: Option<String>,
     pub effort: Option<String>,
@@ -266,7 +270,7 @@ pub struct StartArgs {
 pub fn start(client: &Client, a: &StartArgs) -> Result<String> {
     let v = client.post_json(
         "/api/run/start",
-        &json!({ "cwd": a.cwd, "prompt": a.prompt, "resume": a.resume, "model": a.model, "permission_mode": a.mode, "effort": a.effort }),
+        &json!({ "cwd": a.cwd, "prompt": a.prompt, "resume": a.resume, "agent": a.agent, "model": a.model, "permission_mode": a.mode, "effort": a.effort }),
     )?;
     Ok(s(&v, "session_id").to_string())
 }
@@ -283,7 +287,7 @@ pub fn list_sessions(client: &Client) -> Result<()> {
         .collect();
     let runs = runs.get("runs").and_then(Value::as_array).cloned().unwrap_or_default();
     if runs.is_empty() {
-        println!("OYAKATA が持っているセッションはありません。`oyakata new \"指示\"` で始められます。");
+        println!("{}", tr("OYAKATA が持っているセッションはありません。`oyakata new \"指示\"` で始められます。", "OYAKATA owns no sessions. Start one with `oyakata new \"prompt\"`."));
         return Ok(());
     }
     println!("{:<38} {:<8} {:<6} {}", "session", "status", "turns", "title / cwd");
@@ -317,7 +321,7 @@ pub fn attach(client: &Client, id: &str, allow_resume: bool, defaults: &StartArg
         let items = d.get("items").and_then(Value::as_array).cloned().unwrap_or_default();
         let skip = items.len().saturating_sub(12);
         if skip > 0 {
-            println!("{DIM}… {skip} 件省略（ブラウザでは全文が見られます）{RST}");
+            println!("{DIM}{}{RST}", if is_ja() { format!("… {skip} 件省略（ブラウザでは全文が見られます）") } else { format!("… {skip} omitted (the browser shows everything)") });
         }
         for it in &items[skip..] {
             print_item(it, true);
@@ -329,18 +333,18 @@ pub fn attach(client: &Client, id: &str, allow_resume: bool, defaults: &StartArg
     if !running {
         if let Some(sess) = find_session(client, id) {
             if s(&sess, "owner") == "terminal" {
-                bail!("このセッションはターミナル側の claude が実行中です。そちらを終了してから、もう一度 attach すると OYAKATA が引き継ぎます。");
+                bail!("{}", tr("このセッションはターミナル側の claude が実行中です。そちらを終了してから、もう一度 attach すると OYAKATA が引き継ぎます。", "This session is running in a terminal. End it there, then attach again and OYAKATA will take it over."));
             }
         }
         if !allow_resume {
-            bail!("セッション {id} は OYAKATA の管理下にありません。`oyakata attach --resume {id}` で引き継げます。");
+            bail!("{}", if is_ja() { format!("セッション {id} は OYAKATA の管理下にありません。`oyakata attach --resume {id}` で引き継げます。") } else { format!("Session {id} is not owned by OYAKATA. Take it over with `oyakata attach --resume {id}`.") });
         }
-        println!("{BOLD}このセッションは終了しています。最初の指示を入力すると OYAKATA が引き継いで再開します。{RST}");
+        println!("{BOLD}{}{RST}", tr("このセッションは終了しています。最初の指示を入力すると OYAKATA が引き継いで再開します。", "This session has ended. Type the first prompt and OYAKATA will resume it."));
         print!("> ");
         std::io::stdout().flush()?;
         let mut first = String::new();
         if std::io::stdin().read_line(&mut first)? == 0 || first.trim().is_empty() {
-            bail!("指示が空なので中止しました");
+            bail!("{}", tr("指示が空なので中止しました", "empty prompt; nothing to do"));
         }
         let cwd = detail
             .as_ref()
@@ -351,7 +355,7 @@ pub fn attach(client: &Client, id: &str, allow_resume: bool, defaults: &StartArg
             .unwrap_or_else(|| defaults.cwd.clone());
         start(
             client,
-            &StartArgs { cwd, prompt: first.trim().to_string(), resume: Some(id.to_string()), model: defaults.model.clone(), mode: defaults.mode.clone(), effort: defaults.effort.clone() },
+            &StartArgs { cwd, prompt: first.trim().to_string(), resume: Some(id.to_string()), agent: None, model: defaults.model.clone(), mode: defaults.mode.clone(), effort: defaults.effort.clone() },
         )?;
         run = find_run(client, id);
     }
@@ -393,14 +397,14 @@ pub fn attach(client: &Client, id: &str, allow_resume: bool, defaults: &StartArg
     // When stdin is closed (scripted use), leave once the turn ends, but give the transcript
     // poller a moment to deliver the final text first.
     let mut closing_at: Option<std::time::Instant> = None;
-    println!("{DIM}接続: {id}  （/quit で端末だけ離脱、/stop でセッション終了。ブラウザからも同じ会話に送れます）{RST}");
+    println!("{DIM}{}{RST}", if is_ja() { format!("接続: {id}  （/quit で端末だけ離脱、/stop でセッション終了。ブラウザからも同じ会話に送れます）") } else { format!("attached: {id}  (/quit detaches this terminal, /stop ends the session; the browser can type into it too)") });
     if let Some(p) = &pending {
         print_pending(p);
     } else if status == "idle" {
         print!("> ");
         std::io::stdout().flush()?;
     } else {
-        println!("{DIM}（Claude が作業中… そのまま入力すると、次の区切りで Claude に渡します）{RST}");
+        println!("{DIM}{}{RST}", tr("（作業中… そのまま入力すると、次の区切りで渡します）", "(busy… type anyway and it is handed over at the next boundary)"));
     }
 
     loop {
@@ -463,7 +467,7 @@ pub fn attach(client: &Client, id: &str, allow_resume: bool, defaults: &StartArg
                     let new_status = s(&r, "status").to_string();
                     let new_pending = r.get("pending").and_then(Value::as_array).and_then(|a| a.first().cloned());
                     if new_status == "exited" {
-                        println!("{DIM}セッションが終了しました。{}{RST}", s(&r, "last_error"));
+                        println!("{DIM}{}{}{RST}", tr("セッションが終了しました。", "The session has ended. "), s(&r, "last_error"));
                         break;
                     }
                     if new_pending.as_ref().map(|p| s(p, "request_id")) != pending.as_ref().map(|p| s(p, "request_id")) {
@@ -490,12 +494,12 @@ pub fn attach(client: &Client, id: &str, allow_resume: bool, defaults: &StartArg
                     continue;
                 }
                 if line == "/quit" || line == "/q" {
-                    println!("{DIM}端末を離れます。セッションは OYAKATA が持ったままです。{RST}");
+                    println!("{DIM}{}{RST}", tr("端末を離れます。セッションは OYAKATA が持ったままです。", "Detaching. OYAKATA keeps the session."));
                     break;
                 }
                 if line == "/stop" {
                     client.post_json(&format!("/api/run/{id}/stop"), &json!({}))?;
-                    println!("セッションを終了しました。");
+                    println!("{}", tr("セッションを終了しました。", "The session was ended."));
                     break;
                 }
                 if line == "/status" {
@@ -513,7 +517,7 @@ pub fn attach(client: &Client, id: &str, allow_resume: bool, defaults: &StartArg
                 match client.post_json(&format!("/api/run/{id}/send"), &json!({ "text": line })) {
                     Ok(_) => {
                         if status == "busy" {
-                            println!("{DIM}（作業中なので、次の区切りで Claude に渡します）{RST}");
+                            println!("{DIM}{}{RST}", tr("（作業中なので、次の区切りで渡します）", "(busy; handed over at the next boundary)"));
                         }
                         status = "busy".into();
                     }
@@ -527,7 +531,7 @@ pub fn attach(client: &Client, id: &str, allow_resume: bool, defaults: &StartArg
                 }
             }
             Msg::StreamClosed => {
-                println!("{DIM}OYAKATA との接続が切れました（常駐が停止した可能性があります）。{RST}");
+                println!("{DIM}{}{RST}", tr("OYAKATA との接続が切れました（常駐が停止した可能性があります）。", "Lost the connection to OYAKATA (the daemon may have stopped)."));
                 break;
             }
         }

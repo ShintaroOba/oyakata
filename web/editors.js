@@ -49,22 +49,22 @@
       if (!file) return;
       const btns = [];
       if (!file.binary) {
-        if (mode !== 'edit') btns.push('<button type="button" class="btn small act" data-act="edit">編集</button>');
-        if (isMd && mode !== 'render') btns.push('<button type="button" class="btn small act" data-act="render">描画</button>');
-        if (isDoc && mode !== 'preview') btns.push('<button type="button" class="btn small act" data-act="preview">プレビュー</button>');
-        if (mode === 'edit') btns.push('<button type="button" class="btn small primary act" data-act="save" title="Ctrl+S">保存</button>');
+        if (mode !== 'edit') btns.push(t('<button type="button" class="btn small act" data-act="edit">編集</button>'));
+        if (isMd && mode !== 'render') btns.push(t('<button type="button" class="btn small act" data-act="render">描画</button>'));
+        if (isDoc && mode !== 'preview') btns.push(t('<button type="button" class="btn small act" data-act="preview">プレビュー</button>'));
+        if (mode === 'edit') btns.push(t('<button type="button" class="btn small primary act" data-act="save" title="Ctrl+S">保存</button>'));
       }
-      if (rel != null && root) btns.push('<button type="button" class="btn small act" data-act="diff">差分</button>');
-      btns.push('<button type="button" class="btn small act" data-act="reload">再読込</button>');
-      btns.push('<button type="button" class="btn small act" data-act="copy-path">パス</button>');
+      if (rel != null && root) btns.push(t('<button type="button" class="btn small act" data-act="diff">差分</button>'));
+      btns.push(t('<button type="button" class="btn small act" data-act="reload">再読込</button>'));
+      btns.push(t('<button type="button" class="btn small act" data-act="copy-path">パス</button>'));
       let body;
       const img = file.mime.startsWith('image/');
       if (img) body = `<div class="ev-content" style="padding:16px;text-align:center"><img src="${rawUrl}" style="max-width:100%" alt=""></div>`;
-      else if (file.binary) body = `<div class="url-card"><div class="big">バイナリファイルです</div><a class="btn" href="${rawUrl}" target="_blank" rel="noopener">ブラウザで開く</a></div>`;
+      else if (file.binary) body = `<div class="url-card"><div class="big">${t("バイナリファイルです")}</div><a class="btn" href="${rawUrl}" target="_blank" rel="noopener">${t("ブラウザで開く")}</a></div>`;
       else if (mode === 'preview') body = `<iframe sandbox="allow-scripts allow-popups allow-forms" src="${rawUrl}" title="${esc(path)}"></iframe>`;
       else if (mode === 'render') body = `<div class="ev-content md">${md(cm ? cm.getValue() : file.content || '')}</div>`;
       else body = '<div class="cm-wrap"></div>';
-      const title = `<span class="path" title="${esc(path)}">${esc(rel != null && root ? rel : path)}</span><span class="ev-size">${sizeStr(file.size)}${file.truncated ? ' · 先頭 2MB のみ（保存不可）' : ''}</span>`;
+      const title = `<span class="path" title="${esc(path)}">${esc(rel != null && root ? rel : path)}</span><span class="ev-size">${sizeStr(file.size)}${file.truncated ? t(' · 先頭 2MB のみ（保存不可）') : ''}</span>`;
       const keepCm = cm && mode === 'edit' && $('.cm-wrap', el);
       if (!keepCm) {
         const value = cm ? cm.getValue() : null;
@@ -148,7 +148,7 @@
     function openFind() {
       if (!cm) return;
       if (!find) {
-        const fb = div('findbar', '<input type="text" class="fd-q" placeholder="検索" spellcheck="false"><span class="fd-count"></span><button type="button" class="fd-b" data-fd="cs" title="大文字と小文字を区別">Aa</button><button type="button" class="fd-b" data-fd="prev" title="前へ（Shift+Enter）">↑</button><button type="button" class="fd-b" data-fd="next" title="次へ（Enter）">↓</button><button type="button" class="fd-b" data-fd="close" title="閉じる（Esc）">✕</button>');
+        const fb = div('findbar', t('<input type="text" class="fd-q" placeholder="検索" spellcheck="false"><span class="fd-count"></span><button type="button" class="fd-b" data-fd="cs" title="大文字と小文字を区別">Aa</button><button type="button" class="fd-b" data-fd="prev" title="前へ（Shift+Enter）">↑</button><button type="button" class="fd-b" data-fd="next" title="次へ（Enter）">↓</button><button type="button" class="fd-b" data-fd="close" title="閉じる（Esc）">✕</button>'));
         $('.ev-bar', el).after(fb);
         find = { el: fb, input: $('.fd-q', fb), marks: [], hits: [], cur: -1, cs: false, curMark: null };
         find.input.addEventListener('input', () => runFind());
@@ -219,7 +219,7 @@
     function paintCount() {
       if (!find) return;
       const n = find.hits.length;
-      $('.fd-count', find.el).textContent = find.input.value ? (n ? `${find.cur + 1} / ${n}${n >= 5000 ? '+' : ''}` : '0 件') : '';
+      $('.fd-count', find.el).textContent = find.input.value ? (n ? `${find.cur + 1} / ${n}${n >= 5000 ? '+' : ''}` : t('0 件')) : '';
       find.el.classList.toggle('none', !!find.input.value && !n);
     }
     function closeFind() {
@@ -231,7 +231,7 @@
     }
 
     const load = async () => {
-      el.innerHTML = '<div class="loading">読み込み中…</div>';
+      el.innerHTML = t('<div class="loading">読み込み中…</div>');
       try {
         file = await api.get(`/api/fs/file?path=${encodeURIComponent(path)}`);
         lastSaved = file.content ?? '';
@@ -251,14 +251,14 @@
         file.size = r.size;
         lastSaved = content;
         setDirty();
-        toast(`保存しました: ${basename(path)}`);
+        toast(`${t("保存しました:")} ${basename(path)}`);
         $$('.conflict', el).forEach((c) => c.remove());
         bus.emit('files-changed', { path, root });
         const size = $('.ev-size', el);
         if (size) size.textContent = sizeStr(r.size);
       } catch (e) {
         if (e.status === 409) {
-          const c = div('conflict', `<span>ディスク上のファイルが変更されています。</span><button type="button" class="btn small act" data-act="force-save">上書き保存</button><button type="button" class="btn small act" data-act="reload">読み込み直す</button>`);
+          const c = div('conflict', `<span>${t("ディスク上のファイルが変更されています。")}</span><button type="button" class="btn small act" data-act="force-save">${t("上書き保存")}</button><button type="button" class="btn small act" data-act="reload">${t("読み込み直す")}</button>`);
           $('.ev-bar', el)?.after(c);
         } else toast(e.message);
       }
@@ -316,7 +316,7 @@
 
   // ------------------------------------------------------------------ diffs
   function diffHtml(text) {
-    if (!text.trim()) return '<div class="empty-note">差分はありません</div>';
+    if (!text.trim()) return t('<div class="empty-note">差分はありません</div>');
     const lines = text.replace(/\r\n/g, '\n').split('\n');
     let out = '<div class="diff-view">';
     for (const l of lines) {
@@ -334,11 +334,11 @@
     const { root, rel, staged } = desc.data;
     const el = div('ev');
     const load = async () => {
-      el.innerHTML = '<div class="loading">読み込み中…</div>';
+      el.innerHTML = t('<div class="loading">読み込み中…</div>');
       try {
         const q = `/api/git/diff?root=${encodeURIComponent(root)}${rel ? `&path=${encodeURIComponent(rel)}` : ''}${staged ? '&staged=1' : ''}`;
         const r = await api.get(q);
-        el.innerHTML = bar([`<span class="path">${esc(rel || 'すべての変更')}</span><span>${staged ? 'ステージ済み' : '作業ツリー'}</span>`, '<button type="button" class="btn small act" data-act="reload">更新</button>', rel ? '<button type="button" class="btn small act" data-act="open">ファイルを開く</button>' : '']) + `<div class="ev-content">${diffHtml(r.diff || '')}</div>`;
+        el.innerHTML = bar([`<span class="path">${esc(rel || t('すべての変更'))}</span><span>${staged ? t('ステージ済み') : t('作業ツリー')}</span>`, t('<button type="button" class="btn small act" data-act="reload">更新</button>'), rel ? t('<button type="button" class="btn small act" data-act="open">ファイルを開く</button>') : '']) + `<div class="ev-content">${diffHtml(r.diff || '')}</div>`;
       } catch (e) { el.innerHTML = `<div class="loading err">${esc(e.message)}</div>`; }
     };
     el.addEventListener('click', (e) => {
@@ -353,7 +353,7 @@
   }
   function commitViewer(desc) {
     const { root, hash } = desc.data;
-    const el = div('ev', '<div class="loading">読み込み中…</div>');
+    const el = div('ev', t('<div class="loading">読み込み中…</div>'));
     (async () => {
       try {
         const r = await api.get(`/api/git/show?root=${encodeURIComponent(root)}&hash=${encodeURIComponent(hash)}`);
@@ -385,8 +385,8 @@
     const el = div('ev');
     const canFrame = framable(url);
     const render = (frame) => {
-      el.innerHTML = bar([`<span class="path" title="${esc(url)}">${esc(url)}</span>`, '<button type="button" class="btn small act" data-act="dock">別ウィンドウ</button>', `<a class="btn small" href="${esc(url)}" target="_blank" rel="noopener noreferrer">新しいタブ</a>`, '<button type="button" class="btn small act" data-act="copy">コピー</button>'])
-        + (frame ? `<iframe src="${esc(url)}" referrerpolicy="no-referrer" title="${esc(url)}"></iframe>` : `<div class="url-card"><div class="big">${esc(url)}</div><div>このサイトは埋め込み表示を許可していないため、右横の別ウィンドウとして開きます。</div><div class="acts"><button type="button" class="btn primary act" data-act="dock">右横の別ウィンドウで開く</button><a class="btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">新しいタブで開く</a><button type="button" class="btn act" data-act="frame">この中で試す</button></div></div>`);
+      el.innerHTML = bar([`<span class="path" title="${esc(url)}">${esc(url)}</span>`, t('<button type="button" class="btn small act" data-act="dock">別ウィンドウ</button>'), `<a class="btn small" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${t("新しいタブ")}</a>`, t('<button type="button" class="btn small act" data-act="copy">コピー</button>')])
+        + (frame ? `<iframe src="${esc(url)}" referrerpolicy="no-referrer" title="${esc(url)}"></iframe>` : `<div class="url-card"><div class="big">${esc(url)}</div><div>${t("このサイトは埋め込み表示を許可していないため、右横の別ウィンドウとして開きます。")}</div><div class="acts"><button type="button" class="btn primary act" data-act="dock">${t("右横の別ウィンドウで開く")}</button><a class="btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${t("新しいタブで開く")}</a><button type="button" class="btn act" data-act="frame">${t("この中で試す")}</button></div></div>`);
     };
     render(canFrame);
     el.addEventListener('click', (e) => {
@@ -402,7 +402,7 @@
   // ----------------------------------------------------------------- agents
   function agentViewer(desc) {
     const { session, agent } = desc.data;
-    const el = div('ev', '<div class="loading">読み込み中…</div>');
+    const el = div('ev', t('<div class="loading">読み込み中…</div>'));
     let items = [];
     bindTranscript(el, { items: () => items, cwd: () => state.byId.get(session)?.cwd, sessionId: () => session });
     (async () => {
@@ -434,7 +434,7 @@
   }
   function openDiff(root, rel, staged = false, opts) {
     if (!root) return;
-    return OY.wb.open({ kind: 'diff', key: `diff:${OY.norm(root)}:${rel || '*'}:${staged ? 1 : 0}`, title: (rel ? basename(rel) : basename(root)) + ' 差分', icon: '±', data: { root, rel, staged } }, opts);
+    return OY.wb.open({ kind: 'diff', key: `diff:${OY.norm(root)}:${rel || '*'}:${staged ? 1 : 0}`, title: (rel ? basename(rel) : basename(root)) + t(' 差分'), icon: '±', data: { root, rel, staged } }, opts);
   }
   function openCommit(root, hash, subject, opts) {
     return OY.wb.open({ kind: 'commit', key: `commit:${OY.norm(root)}:${hash}`, title: `${hash.slice(0, 7)} ${subject || ''}`, icon: '◉', data: { root, hash } }, opts);
@@ -446,13 +446,13 @@
     return OY.wb.open({ kind: 'url', key: 'url:' + url, title: hostOf(url), icon: '🔗', data: { url } }, opts);
   }
   function openAgent(session, agent, opts) {
-    return OY.wb.open({ kind: 'agent', key: `agent:${session}:${agent}`, title: 'サブエージェント', icon: '🤖', data: { session, agent } }, opts);
+    return OY.wb.open({ kind: 'agent', key: `agent:${session}:${agent}`, title: t('サブエージェント'), icon: '🤖', data: { session, agent } }, opts);
   }
   function askUrl() {
     OY.modal({
-      title: 'URL を開く',
-      body: '<label class="field"><span>URL</span><input type="text" id="url-in" placeholder="https://…"></label><p class="note">claude.ai や GitHub など埋め込みを拒否するサイトは、右横の別ウィンドウとして開きます。</p>',
-      actions: [{ label: 'キャンセル' }, { label: '開く', primary: true, onClick: (card) => { const u = $('#url-in', card).value.trim(); if (!u) throw new Error('URL を入力してください'); openUrl(u); } }],
+      title: t('URL を開く'),
+      body: t('<label class="field"><span>URL</span><input type="text" id="url-in" placeholder="https://…"></label><p class="note">claude.ai や GitHub など埋め込みを拒否するサイトは、右横の別ウィンドウとして開きます。</p>'),
+      actions: [{ label: t('キャンセル') }, { label: t('開く'), primary: true, onClick: (card) => { const u = $('#url-in', card).value.trim(); if (!u) throw new Error(t('URL を入力してください')); openUrl(u); } }],
       onOpen: (card) => { const i = $('#url-in', card); i.focus(); i.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('.modal-actions .primary', card).click(); }); },
     });
   }

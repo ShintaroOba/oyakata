@@ -56,7 +56,8 @@ const q = (s) => JSON.stringify(s);
 const fresh = async (hash) => {
   await cmd('Page.navigate', { url: base + '/' + (hash || '') });
   await sleep(1500);
-  await js(`localStorage.clear()`);
+  // A chosen language keeps the first-run language dialog out of the shots (LANG_UI=en for English).
+  await js(`localStorage.clear(); localStorage.setItem('oyakata.lang', ${JSON.stringify(JSON.stringify(process.env.LANG_UI || 'ja'))})`);
   await cmd('Page.reload');
   await sleep(3500);
 };

@@ -8,6 +8,17 @@ pub fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// OYAKATA's own folder for config.json, the trash and the daemon log: `OYAKATA_HOME` or
+/// `~/.oyakata`.
+pub fn oyakata_dir() -> PathBuf {
+    if let Some(p) = std::env::var_os("OYAKATA_HOME") {
+        if !p.is_empty() {
+            return PathBuf::from(p);
+        }
+    }
+    home_dir().join(".oyakata")
+}
+
 /// Claude Code's config directory. Honors an explicit override first,
 /// then `CLAUDE_CONFIG_DIR` (the same variable Claude Code reads), then `~/.claude`.
 pub fn claude_dir(explicit: Option<PathBuf>) -> PathBuf {

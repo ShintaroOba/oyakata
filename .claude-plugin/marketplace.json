@@ -9,7 +9,7 @@
     {
       "name": "oyakata",
       "source": ".",
-      "description": "/oyakata スキル: OYAKATA の司令塔画面を開き、以後の応答を図は Mermaid・比較は表で書く。本体の oyakata コマンドが無ければ同梱スクリプトで GitHub Releases のビルド済みバイナリを入れる（Rust 不要）",
+      "description": "/oyakata skill: opens the OYAKATA command post (Claude Code, Codex CLI, Gemini CLI, Copilot CLI and OpenCode sessions in one browser tab) and makes replies browser-friendly (Mermaid diagrams, tables). Installs the prebuilt oyakata binary when missing.",
       "category": "developer-tools",
       "tags": ["claude-code", "sessions", "viewer"]
     }

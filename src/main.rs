@@ -1,4 +1,5 @@
-//! OYAKATA — a browser-based command post for Claude Code sessions across repositories.
+//! OYAKATA — a browser-based command post for coding-agent sessions (Claude Code, Codex CLI,
+//! Gemini CLI, Copilot CLI, OpenCode) across repositories.
 //!
 //! `oyakata`            start (or reuse) the daemon and open the browser
 //! `oyakata serve`      run the server in the foreground
@@ -9,6 +10,8 @@
 //! `oyakata attach`     attach this terminal to a session OYAKATA owns
 //! `oyakata sessions`   list sessions OYAKATA owns
 
+mod agents;
+mod i18n;
 mod client;
 mod console;
 mod gitops;
@@ -77,9 +80,9 @@ enum Cmd {
     Status,
     /// Stop the running daemon
     Stop,
-    /// Install the /oyakata skill into Claude Code (~/.claude/skills/oyakata)
+    /// Install the /oyakata skill for every agent found (~/.claude/skills, ~/.codex/skills, ~/.agents/skills)
     Install {
-        /// Directory to install the skill into
+        /// Install into this one directory instead
         #[arg(long)]
         skills_dir: Option<PathBuf>,
         /// Overwrite an existing, different SKILL.md
@@ -91,6 +94,9 @@ enum Cmd {
         /// Working directory (default: current directory)
         #[arg(long)]
         cwd: Option<PathBuf>,
+        /// Agent: claude (default) | codex | gemini | copilot | opencode
+        #[arg(long)]
+        agent: Option<String>,
         /// Model, e.g. claude-opus-5-5
         #[arg(long)]
         model: Option<String>,
@@ -140,10 +146,13 @@ fn main() -> Result<()> {
     paths::augment_path();
     let cli = Cli::parse();
     let claude_dir = paths::claude_dir(cli.common.claude_dir.clone());
+    let oyakata_dir = paths::oyakata_dir();
+    let _ = fs::create_dir_all(&oyakata_dir);
+    i18n::init(&oyakata_dir);
     match cli.cmd {
         Some(Cmd::Serve) => {
             let url = (!cli.no_open).then(|| page_url(&cli.common, cli.focus.as_deref()));
-            run_server(&cli.common, claude_dir, url)
+            run_server(&cli.common, claude_dir, oyakata_dir, url)
         }
         Some(Cmd::Status) => {
             match probe(&cli.common) {
@@ -173,10 +182,10 @@ fn main() -> Result<()> {
             Ok(())
         }
         Some(Cmd::Install { skills_dir, force }) => install(&claude_dir, skills_dir, force),
-        Some(Cmd::New { cwd, model, mode, effort, no_attach, prompt }) => {
-            let c = ensure_daemon(&cli.common, &claude_dir)?;
+        Some(Cmd::New { cwd, agent, model, mode, effort, no_attach, prompt }) => {
+            let c = ensure_daemon(&cli.common, &oyakata_dir)?;
             let cwd = cwd.map(|p| p.display().to_string()).unwrap_or_else(client::current_dir_string);
-            let args = client::StartArgs { cwd, prompt: prompt.join(" "), resume: None, model, mode, effort };
+            let args = client::StartArgs { cwd, prompt: prompt.join(" "), resume: None, agent, model, mode, effort };
             let id = client::start(&c, &args)?;
             println!("session {id}\n{}", page_url(&cli.common, Some(&id)));
             if no_attach {
@@ -185,8 +194,8 @@ fn main() -> Result<()> {
             client::attach(&c, &id, false, &args)
         }
         Some(Cmd::Attach { id, resume, model, mode, effort }) => {
-            let c = ensure_daemon(&cli.common, &claude_dir)?;
-            let defaults = client::StartArgs { cwd: client::current_dir_string(), prompt: String::new(), resume: None, model, mode, effort };
+            let c = ensure_daemon(&cli.common, &oyakata_dir)?;
+            let defaults = client::StartArgs { cwd: client::current_dir_string(), prompt: String::new(), resume: None, agent: None, model, mode, effort };
             client::attach(&c, &id, resume, &defaults)
         }
         Some(Cmd::Sessions) => {
@@ -198,25 +207,25 @@ fn main() -> Result<()> {
             client::list_sessions(&c)
         }
         Some(Cmd::TypeInto { pid, proc_start, escape }) => console::helper_main(pid, proc_start, escape),
-        None => open_flow(cli, claude_dir),
+        None => open_flow(cli, claude_dir, oyakata_dir),
     }
 }
 
 /// A client for the daemon, starting the daemon first if nothing answers on the port.
-fn ensure_daemon(common: &Common, claude_dir: &Path) -> Result<client::Client> {
+fn ensure_daemon(common: &Common, oyakata_dir: &Path) -> Result<client::Client> {
     let c = client::Client { bind: common.bind.clone(), port: common.port };
     if c.is_running() {
         return Ok(c);
     }
-    spawn_daemon(common, claude_dir)?;
+    spawn_daemon(common, oyakata_dir)?;
     if !client::wait_until_running(&c, 10) {
-        bail!("the daemon did not come up within 10s; see {}", claude_dir.join("oyakata.log").display());
+        bail!("the daemon did not come up within 10s; see {}", oyakata_dir.join("oyakata.log").display());
     }
     Ok(c)
 }
 
 /// Default command: make sure a daemon is running, then open the browser on the right session.
-fn open_flow(cli: Cli, claude_dir: PathBuf) -> Result<()> {
+fn open_flow(cli: Cli, claude_dir: PathBuf, oyakata_dir: PathBuf) -> Result<()> {
     let focus = cli
         .focus
         .clone()
@@ -233,10 +242,10 @@ fn open_flow(cli: Cli, claude_dir: PathBuf) -> Result<()> {
 
     if cli.foreground {
         let open = (!cli.no_open).then_some(url);
-        return run_server(&cli.common, claude_dir, open);
+        return run_server(&cli.common, claude_dir, oyakata_dir, open);
     }
 
-    spawn_daemon(&cli.common, &claude_dir)?;
+    spawn_daemon(&cli.common, &oyakata_dir)?;
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
         if probe(&cli.common).is_some() {
@@ -250,7 +259,7 @@ fn open_flow(cli: Cli, claude_dir: PathBuf) -> Result<()> {
     }
     bail!(
         "the daemon did not come up within 10s; see {}",
-        claude_dir.join("oyakata.log").display()
+        oyakata_dir.join("oyakata.log").display()
     )
 }
 
@@ -266,18 +275,16 @@ fn page_url(c: &Common, focus: Option<&str>) -> String {
 }
 
 #[tokio::main]
-async fn run_server(c: &Common, claude_dir: PathBuf, open_url: Option<String>) -> Result<()> {
+async fn run_server(c: &Common, claude_dir: PathBuf, oyakata_dir: PathBuf, open_url: Option<String>) -> Result<()> {
     if !claude_dir.join("projects").is_dir() {
-        bail!(
-            "no Claude Code data at {} (expected a projects/ directory; use --claude-dir)",
-            claude_dir.display()
-        );
+        eprintln!("no Claude Code data at {} (no projects/ directory); only other agents will be shown", claude_dir.display());
     }
     let started = Instant::now();
-    let mut state = index::State::new(claude_dir.clone());
+    let mut state = index::State::new(claude_dir.clone(), oyakata_dir.clone());
     state.ghq_root = gitops::ghq_root(&paths::home_dir());
     state.repo_roots = c.repo_roots.iter().filter(|p| p.is_dir()).cloned().collect();
     state.load_config();
+    state.agents = agents::detect(&paths::home_dir(), &claude_dir, c.claude.clone(), &state.agent_overrides);
     state.purge_trash(Duration::from_secs(30 * 24 * 3600));
     let n = state.initial_scan();
     let live = state.live.len();
@@ -287,12 +294,19 @@ async fn run_server(c: &Common, claude_dir: PathBuf, open_url: Option<String>) -
         claude_dir.display(),
         started.elapsed().as_secs_f64()
     );
-    let claude_exe = runner::find_claude(c.claude.clone());
-    match &claude_exe {
-        Some(exe) => eprintln!("claude executable: {}", exe.display()),
-        None => eprintln!("claude executable not found; starting sessions from the browser is disabled (use --claude <path>)"),
+    for a in &state.agents {
+        if !a.installed {
+            continue;
+        }
+        eprintln!(
+            "{}: {}{} (data: {})",
+            a.label,
+            a.exe_path.as_deref().unwrap_or("executable not found"),
+            if a.enabled { "" } else { ", disabled" },
+            a.data_dir.display()
+        );
     }
-    let runners = Arc::new(runner::RunnerRegistry::new(claude_exe));
+    let runners = Arc::new(runner::RunnerRegistry::new(state.agents.clone()));
 
     let (tx, _rx) = tokio::sync::broadcast::channel(512);
     let app: server::Shared = Arc::new(server::App {
@@ -312,6 +326,7 @@ async fn run_server(c: &Common, claude_dir: PathBuf, open_url: Option<String>) -
 
     tokio::spawn(server::poll_loop(app.clone(), Duration::from_millis(1000)));
     tokio::spawn(server::run_events_loop(app.clone()));
+    tokio::spawn(server::opencode_loop(app.clone()));
 
     if let Some(url) = open_url {
         if let Err(e) = open_browser(&url) {
@@ -352,10 +367,10 @@ async fn run_server(c: &Common, claude_dir: PathBuf, open_url: Option<String>) -
     std::process::exit(0)
 }
 
-/// Start `oyakata serve` as a detached process whose output goes to `<claude_dir>/oyakata.log`.
-fn spawn_daemon(c: &Common, claude_dir: &Path) -> Result<()> {
+/// Start `oyakata serve` as a detached process whose output goes to `~/.oyakata/oyakata.log`.
+fn spawn_daemon(c: &Common, oyakata_dir: &Path) -> Result<()> {
     let exe = std::env::current_exe().context("locate own executable")?;
-    let log_path = claude_dir.join("oyakata.log");
+    let log_path = oyakata_dir.join("oyakata.log");
     let log = fs::File::create(&log_path).with_context(|| format!("create {}", log_path.display()))?;
     let mut args: Vec<String> = vec![
         "serve".into(),
@@ -416,29 +431,47 @@ fn spawn_daemon(c: &Common, claude_dir: &Path) -> Result<()> {
     }
 }
 
+/// Write SKILL.md where each agent looks for skills: Claude Code's `~/.claude/skills`,
+/// Codex's `$CODEX_HOME/skills` when Codex is installed, and the shared `~/.agents/skills`
+/// that Gemini CLI, Copilot CLI and OpenCode read.
 fn install(claude_dir: &Path, skills_dir: Option<PathBuf>, force: bool) -> Result<()> {
-    let dir = skills_dir.unwrap_or_else(|| claude_dir.join("skills").join("oyakata"));
-    let target = dir.join("SKILL.md");
-    if target.exists() && !force {
-        let current = fs::read_to_string(&target)?;
-        if current == SKILL_MD {
-            println!("skill already up to date: {}", target.display());
-        } else {
-            println!(
-                "{} exists and differs from the bundled skill; re-run with --force to overwrite",
-                target.display()
-            );
+    use i18n::tr;
+    let home = paths::home_dir();
+    let targets: Vec<(String, PathBuf)> = match skills_dir {
+        Some(d) => vec![(String::new(), d)],
+        None => {
+            let mut v = vec![("Claude Code".to_string(), claude_dir.join("skills").join("oyakata"))];
+            let codex = agents::AgentKind::Codex.default_data_dir(&home);
+            if codex.is_dir() {
+                v.push(("Codex CLI".into(), codex.join("skills").join("oyakata")));
+            }
+            v.push(("Gemini CLI / Copilot CLI / OpenCode".into(), home.join(".agents").join("skills").join("oyakata")));
+            v
         }
-    } else {
-        fs::create_dir_all(&dir)?;
-        fs::write(&target, SKILL_MD)?;
-        println!("installed skill: {}", target.display());
+    };
+    for (label, dir) in targets {
+        let target = dir.join("SKILL.md");
+        let tag = if label.is_empty() { String::new() } else { format!(" ({label})") };
+        if target.exists() && !force {
+            let current = fs::read_to_string(&target)?;
+            if current == SKILL_MD {
+                println!("{}{tag}: {}", tr("最新です", "already up to date"), target.display());
+            } else {
+                println!(
+                    "{}{tag}: {}",
+                    tr("既存の SKILL.md と内容が違います。上書きするには --force を付けてください", "exists and differs from the bundled skill; re-run with --force to overwrite"),
+                    target.display()
+                );
+            }
+        } else {
+            fs::create_dir_all(&dir)?;
+            fs::write(&target, SKILL_MD)?;
+            println!("{}{tag}: {}", tr("スキルを置きました", "installed skill"), target.display());
+        }
     }
     println!();
-    println!("Use it from any Claude Code session with: /oyakata");
-    println!("(Alternatively install it as a plugin: claude plugin marketplace add ShintaroOba/oyakata && claude plugin install oyakata@oyakata)");
-    println!("Optional, to make every session prefer Mermaid diagrams, add to ~/.claude/CLAUDE.md:");
-    println!("  図は ```mermaid フェンスで書く（OYAKATA がブラウザで描画する）。ASCIIアートで図を描かない。");
+    println!("{}", tr("Claude Code では /oyakata、他のエージェントでは「oyakata を開いて」のように頼むと使えます。", "Use /oyakata in Claude Code, or ask any other agent to open OYAKATA."));
+    println!("{}", tr("（Claude Code はプラグインでも入ります: claude plugin marketplace add ShintaroOba/oyakata && claude plugin install oyakata@oyakata）", "(Claude Code can also install it as a plugin: claude plugin marketplace add ShintaroOba/oyakata && claude plugin install oyakata@oyakata)"));
     Ok(())
 }
 

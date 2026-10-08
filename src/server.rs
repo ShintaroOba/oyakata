@@ -1,8 +1,10 @@
 //! HTTP server: the single-page UI, the JSON API (sessions, repositories, git, files,
 //! OYAKATA-run sessions, typing into terminal sessions) and a Server-Sent Events stream.
 
+use crate::agents::{self, AgentKind};
 use crate::console::{self, Keys, Target};
 use crate::gitops;
+use crate::i18n::tr;
 use crate::index::{Event, State};
 use crate::live::{self, LiveInfo};
 use crate::runner::{RunnerRegistry, StartOptions};
@@ -47,7 +49,7 @@ pub fn router(app: Shared) -> Router {
         .route("/", get(index_html))
         .route("/assets/{*path}", get(asset))
         .route("/api/health", get(health))
-        .route("/api/config", get(config))
+        .route("/api/config", get(config).post(set_config))
         .route("/api/sessions", get(list_sessions))
         .route("/api/sessions/{id}", get(get_session))
         .route("/api/sessions/{id}/touch", post(touch_session))
@@ -166,6 +168,48 @@ pub async fn run_events_loop(app: Shared) {
     }
 }
 
+/// OpenCode keeps its sessions in a database that OYAKATA reads through the `opencode` CLI
+/// (about a second per call), so listing and fetching run here, off the poll loop, and the
+/// results are installed into the index as converted transcripts.
+pub async fn opencode_loop(app: Shared) {
+    loop {
+        let exe = lock(&app).agents.iter().find(|a| a.kind == AgentKind::Opencode && a.enabled).and_then(|a| a.exe.clone());
+        let mut remaining = 0;
+        if let Some(exe) = exe {
+            let exe2 = exe.clone();
+            let found = tokio::task::spawn_blocking(move || agents::opencode::discover(&exe2)).await.unwrap_or_default();
+            let stale = {
+                let mut st = lock(&app);
+                st.adopt(found);
+                st.stale_opencode()
+            };
+            remaining = stale.len().saturating_sub(8);
+            for (id, title, cwd, updated) in stale.into_iter().take(8) {
+                let exe2 = exe.clone();
+                let id2 = id.clone();
+                let r = tokio::task::spawn_blocking(move || agents::opencode::fetch(&exe2, &id2, title.as_deref(), cwd.as_deref())).await;
+                match r {
+                    Ok(Ok(lines)) => {
+                        let bytes = agents::canon::to_jsonl(&lines);
+                        let events = lock(&app).install_canonical(&id, &bytes, updated);
+                        for e in events {
+                            let _ = app.tx.send(e);
+                        }
+                    }
+                    _ => {
+                        // Don't retry a failing session on every tick.
+                        if let Some(e) = lock(&app).sessions.get_mut(&id) {
+                            e.fetched_ms = e.updated_ms;
+                        }
+                    }
+                }
+            }
+            push_sessions(&app);
+        }
+        tokio::time::sleep(Duration::from_secs(if remaining > 0 { 1 } else { 10 })).await;
+    }
+}
+
 // ---- static assets --------------------------------------------------------------------------
 
 async fn index_html() -> Html<&'static str> {
@@ -186,6 +230,8 @@ macro_rules! embedded {
 
 async fn asset(Path(path): Path<String>) -> Response {
     let (body, ct, cache): (&'static [u8], &str, &str) = match path.as_str() {
+        "i18n-en.js" => embedded!("i18n-en.js", JS, NO_CACHE),
+        "i18n.js" => embedded!("i18n.js", JS, NO_CACHE),
         "app.js" => embedded!("app.js", JS, NO_CACHE),
         "workbench.js" => embedded!("workbench.js", JS, NO_CACHE),
         "chat.js" => embedded!("chat.js", JS, NO_CACHE),
@@ -289,21 +335,46 @@ async fn health(AxState(app): AxState<Shared>) -> Json<Value> {
 }
 
 async fn config(AxState(app): AxState<Shared>) -> Json<Value> {
-    let (claude_dir, ghq_root, repo_roots) = {
-        let st = lock(&app);
+    Json(config_json(&app))
+}
+
+fn config_json(app: &Shared) -> Value {
+    let (claude_dir, ghq_root, repo_roots, lang, oyakata_dir, agents) = {
+        let st = lock(app);
         (
             st.claude_dir.display().to_string(),
             st.ghq_root.as_ref().map(|p| p.display().to_string()),
             st.repo_roots.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+            st.lang.clone(),
+            st.oyakata_dir.display().to_string(),
+            st.agents.clone(),
         )
     };
     let home = crate::paths::home_dir();
     let clone_root = ghq_root.clone().unwrap_or_else(|| home.join("repos").display().to_string());
-    Json(json!({
+    let agents_json: Vec<Value> = agents
+        .iter()
+        .map(|a| {
+            json!({
+                "id": a.kind.id(),
+                "label": a.label,
+                "data_dir": a.data_dir.display().to_string(),
+                "exe": a.exe_path,
+                "installed": a.installed,
+                "enabled": a.enabled,
+                "can_run": a.enabled && a.exe.is_some(),
+                // The agent assigns session ids itself (the browser learns the id on start).
+                "assigns_id": matches!(a.kind, AgentKind::Codex | AgentKind::Opencode),
+                // Permission prompts and mid-turn steering exist only for Claude Code.
+                "interactive": a.kind == AgentKind::Claude,
+            })
+        })
+        .collect();
+    json!({
         "version": env!("CARGO_PKG_VERSION"),
         "claude_dir": claude_dir,
-        "claude_exe": app.runners.exe().map(|e| e.display()),
-        "can_run": app.runners.exe().is_some(),
+        "claude_exe": app.runners.exe(AgentKind::Claude).map(|e| e.display()),
+        "can_run": app.runners.can_run(AgentKind::Claude),
         "can_type": cfg!(windows),
         "default_permission_mode": crate::runner::DEFAULT_PERMISSION_MODE,
         "home": home.display().to_string(),
@@ -311,7 +382,40 @@ async fn config(AxState(app): AxState<Shared>) -> Json<Value> {
         "clone_root": clone_root,
         "path_sep": std::path::MAIN_SEPARATOR.to_string(),
         "repo_roots": repo_roots,
-    }))
+        "lang": lang,
+        "oyakata_dir": oyakata_dir,
+        "agents": agents_json,
+    })
+}
+
+/// `{"lang": "ja" | "en" | null, "agents": {"codex": {"enabled": false}}}`.
+async fn set_config(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Response {
+    let app2 = app.clone();
+    let r = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+        let mut st = lock(&app2);
+        if let Some(l) = body.get("lang") {
+            st.set_lang(l.as_str().map(str::to_string))?;
+        }
+        if let Some(map) = body.get("agents").and_then(Value::as_object) {
+            for (k, v) in map {
+                let Some(kind) = AgentKind::parse(k) else { continue };
+                if let Some(enabled) = v.get("enabled").and_then(Value::as_bool) {
+                    st.set_agent_enabled(kind, enabled)?;
+                    app2.runners.set_enabled(kind, enabled);
+                }
+            }
+        }
+        Ok(())
+    })
+    .await;
+    match r {
+        Ok(Ok(())) => {
+            push_sessions(&app);
+            Json(config_json(&app)).into_response()
+        }
+        Ok(Err(e)) => err(StatusCode::BAD_REQUEST, format!("{e:#}")),
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
 }
 
 async fn list_sessions(AxState(app): AxState<Shared>) -> Json<Value> {
@@ -335,16 +439,55 @@ struct SessionResponse<'a> {
 
 /// Parse a session file outside the state lock so a 30 MB transcript does not stall the
 /// sidebar or the poll loop for everyone else.
+/// Parse a session's whole transcript (converted for non-Claude agents) outside the lock,
+/// then hand it to the index.
 fn ensure_loaded(app: &Shared, id: &str) -> anyhow::Result<()> {
-    let (path, loaded) = lock(app).path_of(id).ok_or_else(|| anyhow::anyhow!("unknown session: {id}"))?;
+    let (path, loaded, agent, title, cwd, updated) = {
+        let st = lock(app);
+        let e = st.sessions.get(id).ok_or_else(|| anyhow::anyhow!("unknown session: {id}"))?;
+        (e.path.clone(), e.transcript.keeps_items(), e.agent, e.title_hint.clone(), e.cwd_hint.clone(), e.updated_ms)
+    };
     if loaded {
         lock(app).touch(id);
         return Ok(());
     }
-    let bytes = std::fs::read(&path)?;
+    let bytes = match agent {
+        AgentKind::Claude => std::fs::read(&path)?,
+        AgentKind::Codex => {
+            let raw = std::fs::read(&path)?;
+            let mut conv = agents::codex::Converter::default();
+            let mut lines = Vec::new();
+            for l in raw.split(|&b| b == b'\n') {
+                lines.extend(conv.convert_line(l));
+            }
+            agents::canon::to_jsonl(&lines)
+        }
+        AgentKind::Copilot => {
+            let raw = std::fs::read(&path)?;
+            let mut conv = agents::copilot::Converter::default();
+            let mut lines = Vec::new();
+            for l in raw.split(|&b| b == b'\n') {
+                lines.extend(conv.convert_line(l));
+            }
+            agents::canon::to_jsonl(&lines)
+        }
+        AgentKind::Gemini => agents::canon::to_jsonl(&agents::gemini::convert_all(&std::fs::read(&path)?)),
+        AgentKind::Opencode => {
+            let exe = lock(app).agent_exe(AgentKind::Opencode).ok_or_else(|| anyhow::anyhow!("opencode executable not found"))?;
+            agents::canon::to_jsonl(&agents::opencode::fetch(&exe, id, title.as_deref(), cwd.as_deref())?)
+        }
+    };
     let mut t = Transcript::new(true);
     t.feed(&bytes);
-    lock(app).install(id, t)
+    let mut st = lock(app);
+    st.install(id, t)?;
+    if agent == AgentKind::Opencode {
+        if let Some(e) = st.sessions.get_mut(id) {
+            e.fetched_ms = updated;
+            e.mtime_ms = updated;
+        }
+    }
+    Ok(())
 }
 
 async fn get_session(AxState(app): AxState<Shared>, Path(id): Path<String>) -> Response {
@@ -450,7 +593,7 @@ async fn get_team(AxState(app): AxState<Shared>, Path(id): Path<String>) -> Resp
 async fn add_repo(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Response {
     let Some(path) = body_str(&body, "path").map(PathBuf::from) else { return bad("path is required") };
     if !path.is_absolute() {
-        return bad("フォルダは絶対パスで指定してください");
+        return bad(tr("フォルダは絶対パスで指定してください", "The folder must be an absolute path."));
     }
     let r = lock(&app).add_repo(path.clone());
     match r {
@@ -490,12 +633,12 @@ async fn clone_repo(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> R
             };
             match gitops::clone_dest(&root, &url, ghq) {
                 Some(d) => d,
-                None => return bad("URL からリポジトリ名を読み取れませんでした。clone 先を指定してください。"),
+                None => return bad(tr("URL からリポジトリ名を読み取れませんでした。clone 先を指定してください。", "Could not read a repository name from the URL. Specify where to clone.")),
             }
         }
     };
     if !dest.is_absolute() {
-        return bad("clone 先は絶対パスで指定してください");
+        return bad(tr("clone 先は絶対パスで指定してください", "The clone destination must be an absolute path."));
     }
     let dest2 = dest.clone();
     let out = match tokio::task::spawn_blocking(move || gitops::clone(&url, &dest2)).await {
@@ -612,7 +755,7 @@ async fn git_grep(Query(q): Query<HashMap<String, String>>) -> Response {
 
 async fn search_sessions(AxState(app): AxState<Shared>, Query(q): Query<HashMap<String, String>>) -> Response {
     let Some(query) = q.get("q").map(|s| s.trim().to_string()).filter(|s| s.chars().count() >= 2) else {
-        return bad("2 文字以上で検索してください");
+        return bad(tr("2 文字以上で検索してください", "Enter at least 2 characters."));
     };
     let files = lock(&app).transcript_files();
     blocking_json(move || Ok(json!({ "hits": crate::index::search_transcripts(&files, &query, 300, 5) }))).await
@@ -719,19 +862,29 @@ async fn run_start(AxState(app): AxState<Shared>, Json(body): Json<Value>) -> Re
     let Some(prompt) = body_str(&body, "prompt") else { return bad("prompt is required") };
     let resume = body_str(&body, "resume").map(str::to_string);
     let session_id = body_str(&body, "session_id").map(str::to_string);
+    let agent = match body_str(&body, "agent").and_then(AgentKind::parse) {
+        Some(a) => a,
+        None => resume.as_ref().and_then(|id| lock(&app).sessions.get(id).map(|e| e.agent)).unwrap_or(AgentKind::Claude),
+    };
     if let Some(id) = &session_id {
         if lock(&app).sessions.contains_key(id) && resume.is_none() {
-            return err(StatusCode::CONFLICT, "そのセッション ID は既に使われています。");
+            return err(StatusCode::CONFLICT, tr("そのセッション ID は既に使われています。", "That session id is already in use."));
         }
     }
     if let Some(id) = &resume {
         app.runners.forget_exited(id);
         let st = lock(&app);
         if st.live.contains_key(id) {
-            return err(StatusCode::CONFLICT, "そのセッションはターミナルで稼働中です。終了してから引き継いでください。");
+            return err(StatusCode::CONFLICT, tr("そのセッションはターミナルで稼働中です。終了してから引き継いでください。", "That session is running in a terminal. End it there before taking it over."));
+        }
+        if let Some(e) = st.sessions.get(id) {
+            if e.agent != AgentKind::Claude && st.summary_of(e).owner.as_deref() == Some("external") {
+                return err(StatusCode::CONFLICT, tr("そのセッションは別のプロセスで稼働中です。終わってから送ってください。", "That session is running in another process. Wait for it to finish."));
+            }
         }
     }
     let opts = StartOptions {
+        agent,
         cwd: PathBuf::from(cwd),
         prompt: prompt.to_string(),
         resume,
@@ -822,14 +975,14 @@ async fn run_stop(AxState(app): AxState<Shared>, Path(id): Path<String>) -> Resp
 /// last poll so a prompt that just appeared there is not typed over.
 fn terminal_session(app: &Shared, id: &str) -> Result<LiveInfo, Response> {
     if app.runners.view(id).is_some_and(|v| v.status != "exited") {
-        return Err(err(StatusCode::CONFLICT, "このセッションは OYAKATA が実行しています。"));
+        return Err(err(StatusCode::CONFLICT, tr("このセッションは OYAKATA が実行しています。", "OYAKATA is running this session.")));
     }
     let dir = lock(app).sessions_dir();
     let Some(l) = live::read_registry(&dir).remove(id) else {
-        return Err(err(StatusCode::CONFLICT, "このセッションはターミナルで稼働していません。"));
+        return Err(err(StatusCode::CONFLICT, tr("このセッションはターミナルで稼働していません。", "This session is not running in a terminal.")));
     };
     if !l.typeable {
-        return Err(err(StatusCode::CONFLICT, "このセッションはターミナル以外（IDE や SDK）で動いているため、ここからは送れません。"));
+        return Err(err(StatusCode::CONFLICT, tr("このセッションはターミナル以外（IDE や SDK）で動いているため、ここからは送れません。", "This session runs outside a terminal (IDE or SDK), so nothing can be typed into it from here.")));
     }
     Ok(l)
 }
@@ -842,7 +995,7 @@ async fn terminal_send(AxState(app): AxState<Shared>, Path(id): Path<String>, Js
     };
     // Enter on a permission prompt would pick its default answer.
     if l.status == "waiting" {
-        return err(StatusCode::CONFLICT, "ターミナルで確認待ちです。ターミナル側で答えてから送ってください。");
+        return err(StatusCode::CONFLICT, tr("ターミナルで確認待ちです。ターミナル側で答えてから送ってください。", "The terminal is waiting for a confirmation. Answer it there first."));
     }
     type_into(&l, Keys::Prompt(text.to_string())).await
 }
@@ -854,7 +1007,7 @@ async fn terminal_interrupt(AxState(app): AxState<Shared>, Path(id): Path<String
     };
     // Esc outside a turn would cancel a prompt or, pressed twice, open the rewind menu.
     if l.status != "busy" {
-        return err(StatusCode::CONFLICT, "Claude は作業中ではありません。");
+        return err(StatusCode::CONFLICT, tr("Claude は作業中ではありません。", "Claude is not working right now."));
     }
     type_into(&l, Keys::Escape).await
 }

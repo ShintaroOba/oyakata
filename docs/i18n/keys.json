@@ -1,0 +1,1582 @@
+{
+ "\nこのセッションの圧縮:": [
+  "chat.js"
+ ],
+ " <span class=\"kh\">(shift+tab で切替)</span>": [
+  "chat.js"
+ ],
+ " <span class=\"muted\">(先頭 60,000 文字のみ)</span>": [
+  "app.js"
+ ],
+ " <span class=\"muted\">（コマンド未検出）</span>": [
+  "app.js"
+ ],
+ " <span class=\"sv-warn\">上限で打ち切り</span>": [
+  "search.js"
+ ],
+ " · 先頭 2MB のみ（保存不可）": [
+  "editors.js"
+ ],
+ " がサブエージェントに仕事を振ると、ここに並びます。": [
+  "team.js"
+ ],
+ " 差分": [
+  "editors.js",
+  "sidebar.js"
+ ],
+ "(出力なし)": [
+  "app.js"
+ ],
+ "/ pull 待ち": [
+  "sidebar.js"
+ ],
+ "/ホスト/オーナー/名前）に置きます。": [
+  "app.js"
+ ],
+ "0 件": [
+  "editors.js"
+ ],
+ "2 文字以上で検索してください": [
+  "search.js"
+ ],
+ "<button type=\"button\" class=\"btn open-diff\">差分</button>": [
+  "chat.js"
+ ],
+ "<button type=\"button\" class=\"btn perm-allow-always\" title=\"Claude Code が提案する範囲でこのセッション中は確認を省く\">許可（以後も）</button>": [
+  "chat.js"
+ ],
+ "<button type=\"button\" class=\"btn small act\" data-act=\"copy\">コピー</button>": [
+  "editors.js"
+ ],
+ "<button type=\"button\" class=\"btn small act\" data-act=\"copy-path\">パス</button>": [
+  "editors.js"
+ ],
+ "<button type=\"button\" class=\"btn small act\" data-act=\"diff\">差分</button>": [
+  "editors.js"
+ ],
+ "<button type=\"button\" class=\"btn small act\" data-act=\"dock\">別ウィンドウ</button>": [
+  "editors.js"
+ ],
+ "<button type=\"button\" class=\"btn small act\" data-act=\"edit\">編集</button>": [
+  "editors.js"
+ ],
+ "<button type=\"button\" class=\"btn small act\" data-act=\"open\">ファイルを開く</button>": [
+  "editors.js"
+ ],
+ "<button type=\"button\" class=\"btn small act\" data-act=\"preview\">プレビュー</button>": [
+  "editors.js"
+ ],
+ "<button type=\"button\" class=\"btn small act\" data-act=\"reload\">再読込</button>": [
+  "editors.js"
+ ],
+ "<button type=\"button\" class=\"btn small act\" data-act=\"reload\">更新</button>": [
+  "editors.js"
+ ],
+ "<button type=\"button\" class=\"btn small act\" data-act=\"render\">描画</button>": [
+  "editors.js"
+ ],
+ "<button type=\"button\" class=\"btn small primary act\" data-act=\"save\" title=\"Ctrl+S\">保存</button>": [
+  "editors.js"
+ ],
+ "<div class=\"cc-ans muted\">回答待ち…</div>": [
+  "app.js"
+ ],
+ "<div class=\"cc-ans muted\">（回答されませんでした）</div>": [
+  "app.js"
+ ],
+ "<div class=\"empty-note\">このフォルダは Git リポジトリではありません</div>": [
+  "sidebar.js"
+ ],
+ "<div class=\"empty-note\">コミットがありません</div>": [
+  "sidebar.js"
+ ],
+ "<div class=\"empty-note\">ファイルがありません</div>": [
+  "sidebar.js"
+ ],
+ "<div class=\"empty-note\">ブランチがありません</div>": [
+  "sidebar.js"
+ ],
+ "<div class=\"empty-note\">差分はありません</div>": [
+  "editors.js"
+ ],
+ "<div class=\"empty-note\">見つかりませんでした</div>": [
+  "search.js"
+ ],
+ "<div class=\"empty-note\">該当なし</div>": [
+  "sidebar.js"
+ ],
+ "<div class=\"fb-empty\">サブフォルダはありません</div>": [
+  "app.js"
+ ],
+ "<div class=\"fb-empty\">一致するリポジトリはありません。パスを入力して Enter で開始できます。</div>": [
+  "app.js"
+ ],
+ "<div class=\"fb-empty\">読み込み中…</div>": [
+  "app.js"
+ ],
+ "<div class=\"loading\">読み込み中…</div>": [
+  "chat.js",
+  "editors.js",
+  "sidebar.js",
+  "team.js"
+ ],
+ "<div class=\"muted\">（出力なし）</div>": [
+  "app.js"
+ ],
+ "<div class=\"ptitle\">このセッションが編集したファイル</div>": [
+  "chat.js"
+ ],
+ "<div class=\"ptitle\">アーティファクト（claude.ai）</div>": [
+  "chat.js"
+ ],
+ "<div class=\"ptitle\">モデル</div>": [
+  "chat.js"
+ ],
+ "<div class=\"ptitle\">努力レベル</div>": [
+  "chat.js"
+ ],
+ "<div class=\"ptitle\">権限モード</div>": [
+  "chat.js"
+ ],
+ "<div class=\"result-head pending\">結果待ち…</div>": [
+  "app.js"
+ ],
+ "<div class=\"sb-empty\">プロンプトがありません</div>": [
+  "chat.js"
+ ],
+ "<div class=\"sb-empty\">リポジトリを選んでください</div>": [
+  "sidebar.js"
+ ],
+ "<div class=\"tc-now\"><span class=\"lbl\">いま</span>親方の判断を待っています</div>": [
+  "team.js"
+ ],
+ "<div class=\"tc-now\"><span class=\"lbl\">いま</span>起動しています…</div>": [
+  "team.js"
+ ],
+ "<div class=\"wl-tips\"><kbd>Enter</kbd> 送信 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 改行 · <kbd>Shift</kbd>+<kbd>Tab</kbd> 権限モード · <kbd>Esc</kbd> 中断</div>": [
+  "chat.js"
+ ],
+ "<input type=\"text\" class=\"fd-q\" placeholder=\"検索\" spellcheck=\"false\"><span class=\"fd-count\"></span><button type=\"button\" class=\"fd-b\" data-fd=\"cs\" title=\"大文字と小文字を区別\">Aa</button><button type=\"button\" class=\"fd-b\" data-fd=\"prev\" title=\"前へ（Shift+Enter）\">↑</button><button type=\"button\" class=\"fd-b\" data-fd=\"next\" title=\"次へ（Enter）\">↓</button><button type=\"button\" class=\"fd-b\" data-fd=\"close\" title=\"閉じる（Esc）\">✕</button>": [
+  "editors.js"
+ ],
+ "<label class=\"field\"><span>URL</span><input type=\"text\" id=\"url-in\" placeholder=\"https://…\"></label><p class=\"note\">claude.ai や GitHub など埋め込みを拒否するサイトは、右横の別ウィンドウとして開きます。</p>": [
+  "editors.js"
+ ],
+ "<option value=\"\">（リポジトリなし）</option>": [
+  "sidebar.js"
+ ],
+ "<section class=\"sb-section\"><h3><span>リポジトリ</span><button type=\"button\" class=\"link-btn add-repo\" title=\"ローカルのフォルダを取り込む / git clone\">＋ 追加</button></h3>": [
+  "sidebar.js"
+ ],
+ "<section class=\"sb-section\"><h3>その他</h3>": [
+  "sidebar.js"
+ ],
+ "<span class=\"chip tiny owner\">親方</span>": [
+  "sidebar.js"
+ ],
+ "<span class=\"hanko-mini\">承認</span>": [
+  "app.js"
+ ],
+ "<span class=\"kh\">権限モード不明</span>": [
+  "chat.js"
+ ],
+ "<span class=\"muted\">検出されたエージェントはありません</span>": [
+  "app.js"
+ ],
+ "<span class=\"pc-wait\">承認待ち…</span>": [
+  "app.js"
+ ],
+ "<span class=\"pt-spacer\"></span><div class=\"pt-actions\"><button type=\"button\" class=\"icon-btn small split-right\" title=\"右に分割\">◫</button><button type=\"button\" class=\"icon-btn small split-down\" title=\"下に分割\">⬓</button></div>": [
+  "workbench.js"
+ ],
+ "<span class=\"spacer\"></span><span class=\"tc-open\">会話 →</span>": [
+  "team.js"
+ ],
+ "<span class=\"spinner\"></span> 検索中…": [
+  "search.js"
+ ],
+ "<span class=\"toc-label\">目次</span>": [
+  "app.js"
+ ],
+ "Claude からの質問": [
+  "chat.js"
+ ],
+ "Claude が計画を提示しています": [
+  "chat.js"
+ ],
+ "Ctrl+W・Ctrl+Tab などはブラウザが先に使うため割り当てていません（タブは中クリックで閉じられます）。": [
+  "app.js"
+ ],
+ "Enter で送信 · Shift+Enter で改行 · Shift+Tab で権限モード": [
+  "chat.js"
+ ],
+ "F12 / Ctrl+クリック": [
+  "app.js"
+ ],
+ "Git リポジトリではないため、ファイルの全文検索は使えません": [
+  "search.js"
+ ],
+ "Git リポジトリではないため、ファイル検索は使えません": [
+  "palette.js"
+ ],
+ "IDE や SDK で動いているセッションには送れません（終了後に引き継げます）": [
+  "chat.js"
+ ],
+ "Mermaid の描画に失敗:": [
+  "app.js"
+ ],
+ "OYAKATA が動かしている": [
+  "app.js"
+ ],
+ "OYAKATA の表示言語を選んでください。あとから設定で変えられます。": [
+  "app.js"
+ ],
+ "OYAKATA 側の": [
+  "chat.js"
+ ],
+ "OpenCode のセッションはその場で消え、元に戻せません。": [
+  "app.js"
+ ],
+ "Pull に失敗": [
+  "sidebar.js"
+ ],
+ "Pull 結果": [
+  "sidebar.js"
+ ],
+ "Push に失敗": [
+  "sidebar.js"
+ ],
+ "Push 結果": [
+  "sidebar.js"
+ ],
+ "Solarized ダーク": [
+  "app.js"
+ ],
+ "Solarized ライト": [
+  "app.js"
+ ],
+ "URL を入力してください": [
+  "app.js",
+  "editors.js"
+ ],
+ "URL を開く": [
+  "editors.js"
+ ],
+ "clone しています…（大きなリポジトリは数分かかります）": [
+  "app.js"
+ ],
+ "clone しました:": [
+  "app.js"
+ ],
+ "clone 先": [
+  "app.js"
+ ],
+ "effort 既定": [
+  "chat.js"
+ ],
+ "esc で中断": [
+  "chat.js"
+ ],
+ "ghq と同じ配置（": [
+  "app.js"
+ ],
+ "https://github.com/owner/name.git または git@github.com:owner/name.git": [
+  "app.js"
+ ],
+ "pull 中…": [
+  "sidebar.js"
+ ],
+ "push 中…": [
+  "sidebar.js"
+ ],
+ "push 待ち": [
+  "sidebar.js"
+ ],
+ "· 変更": [
+  "chat.js"
+ ],
+ "· 完了": [
+  "team.js"
+ ],
+ "」の定義が見つからないため、参照を表示します": [
+  "code.js"
+ ],
+ "」の定義候補": [
+  "code.js"
+ ],
+ "」を一覧から削除します。": [
+  "app.js"
+ ],
+ "あなた": [
+  "app.js",
+  "chat.js",
+  "search.js",
+  "team.js"
+ ],
+ "いま": [
+  "team.js"
+ ],
+ "おはようございます、親方。今日は何から始めましょう？": [
+  "app.js"
+ ],
+ "お待ちどおさま": [
+  "app.js"
+ ],
+ "お疲れさまです、親方。次の仕事は何にしましょう？": [
+  "app.js"
+ ],
+ "から fast-forward で取り込みます（git pull --ff-only）。": [
+  "sidebar.js"
+ ],
+ "からの質問": [
+  "app.js"
+ ],
+ "が": [
+  "app.js"
+ ],
+ "が別のプロセス（ターミナルなど）でこのセッションを動かしています。終わると送れます": [
+  "chat.js"
+ ],
+ "が準備しています…": [
+  "chat.js"
+ ],
+ "ここで始める": [
+  "sidebar.js"
+ ],
+ "このサイトは埋め込み表示を許可していないため、右横の別ウィンドウとして開きます。": [
+  "editors.js"
+ ],
+ "このセッションを削除": [
+  "sidebar.js"
+ ],
+ "このフォルダで新しいセッション": [
+  "sidebar.js"
+ ],
+ "このブラウザは通知に対応していません": [
+  "app.js"
+ ],
+ "このリポジトリで新しいセッション": [
+  "app.js"
+ ],
+ "このリポジトリのツリーと Git": [
+  "chat.js"
+ ],
+ "このリポジトリのファイル": [
+  "index.html"
+ ],
+ "この中で試す": [
+  "editors.js"
+ ],
+ "この職人が振った仕事": [
+  "team.js"
+ ],
+ "さらに前を表示": [
+  "chat.js"
+ ],
+ "すべて": [
+  "sidebar.js"
+ ],
+ "すべての会話": [
+  "index.html"
+ ],
+ "すべての変更": [
+  "editors.js"
+ ],
+ "すべての変更（": [
+  "sidebar.js"
+ ],
+ "すべての差分": [
+  "sidebar.js"
+ ],
+ "すべて折りたたむ": [
+  "index.html"
+ ],
+ "すべて確認なしで実行する（危険）": [
+  "app.js"
+ ],
+ "すべて表示 (": [
+  "app.js"
+ ],
+ "その他:": [
+  "chat.js"
+ ],
+ "たった今": [
+  "app.js"
+ ],
+ "できました": [
+  "app.js"
+ ],
+ "で始まります。モデルや権限はチャット下のステータス行（Shift+Tab）でいつでも変えられます。": [
+  "app.js"
+ ],
+ "で開いているタブはありません": [
+  "workbench.js"
+ ],
+ "に切り替えました": [
+  "chat.js"
+ ],
+ "に渡します · Esc で中断）": [
+  "chat.js"
+ ],
+ "に直接コミットします。push は別途行います。": [
+  "sidebar.js"
+ ],
+ "のセッションを表示します": [
+  "app.js"
+ ],
+ "のセッションを隠しました": [
+  "app.js"
+ ],
+ "の候補": [
+  "code.js"
+ ],
+ "はこのリポジトリに見つかりません": [
+  "code.js"
+ ],
+ "へ push します。": [
+  "sidebar.js"
+ ],
+ "まだ職人（サブエージェント）はいません。": [
+  "team.js"
+ ],
+ "を": [
+  "sidebar.js"
+ ],
+ "を一覧から外します。フォルダやファイルは消えません。": [
+  "sidebar.js"
+ ],
+ "を始めてください。": [
+  "workbench.js"
+ ],
+ "を待っています": [
+  "app.js"
+ ],
+ "を終了してから（作業中なら中断されます）、": [
+  "app.js"
+ ],
+ "を閉じると変更は失われます。": [
+  "workbench.js"
+ ],
+ "アクセント": [
+  "index.html"
+ ],
+ "アクティブなタブを右に分割": [
+  "app.js"
+ ],
+ "アーティファクト": [
+  "chat.js"
+ ],
+ "エディタ内を検索（F3 / Shift+F3 で次 / 前）": [
+  "app.js"
+ ],
+ "エラー": [
+  "app.js",
+  "team.js"
+ ],
+ "エージェント": [
+  "index.html"
+ ],
+ "カードをクリックすると、その職人の会話を開きます。同じ頃に振られた仕事は「陣」にまとめています（並行作業）。カードにマウスを置くと依頼内容が見られます。": [
+  "team.js"
+ ],
+ "キャンセル": [
+  "app.js",
+  "editors.js",
+  "sidebar.js"
+ ],
+ "キーボードショートカット": [
+  "app.js"
+ ],
+ "キーボードショートカット一覧": [
+  "app.js"
+ ],
+ "クリックでファイルを開く": [
+  "app.js"
+ ],
+ "コピー": [
+  "app.js",
+  "chat.js"
+ ],
+ "コピーしました": [
+  "app.js"
+ ],
+ "コピーできませんでした": [
+  "app.js"
+ ],
+ "コマンド": [
+  "workbench.js"
+ ],
+ "コマンドが見つからないため、ここからは送れません": [
+  "chat.js"
+ ],
+ "コマンドが見つかりません": [
+  "palette.js"
+ ],
+ "コマンドパレット": [
+  "app.js"
+ ],
+ "コマンド未検出": [
+  "app.js"
+ ],
+ "コミット": [
+  "sidebar.js"
+ ],
+ "コミットしました": [
+  "sidebar.js"
+ ],
+ "コミットメッセージ": [
+  "sidebar.js"
+ ],
+ "コミットメッセージを入力してください": [
+  "sidebar.js"
+ ],
+ "コミット結果": [
+  "sidebar.js"
+ ],
+ "コンテキストを圧縮": [
+  "app.js"
+ ],
+ "コンテキスト使用量:": [
+  "chat.js"
+ ],
+ "サイドバーの表示 / 非表示": [
+  "app.js"
+ ],
+ "サブエージェント": [
+  "editors.js",
+  "sidebar.js"
+ ],
+ "サブエージェントの会話を開く": [
+  "app.js"
+ ],
+ "システム": [
+  "app.js"
+ ],
+ "システムに合わせる": [
+  "app.js"
+ ],
+ "ショートカット": [
+  "index.html"
+ ],
+ "ステージ済み": [
+  "editors.js"
+ ],
+ "セッション": [
+  "chat.js",
+  "index.html",
+  "search.js"
+ ],
+ "セッション ID をコピー": [
+  "chat.js"
+ ],
+ "セッションが見つかりません": [
+  "palette.js"
+ ],
+ "セッションはまだありません。": [
+  "sidebar.js"
+ ],
+ "セッションを削除": [
+  "app.js",
+  "chat.js"
+ ],
+ "セッションを検索  ( / )": [
+  "index.html"
+ ],
+ "セッションを終了": [
+  "chat.js"
+ ],
+ "セッションを開く…": [
+  "app.js"
+ ],
+ "セッション・ツリー・Git を縦に並べて同時に表示（境目はドラッグで高さを変えられます）": [
+  "index.html"
+ ],
+ "セッション一覧": [
+  "index.html"
+ ],
+ "セッション検索": [
+  "app.js"
+ ],
+ "セピア": [
+  "app.js"
+ ],
+ "タブを右に分割": [
+  "app.js"
+ ],
+ "ターミナルで動いています（終了すると削除できます）": [
+  "sidebar.js"
+ ],
+ "ターミナルで動いているセッションは削除できません。ターミナルで終了してから削除してください。": [
+  "app.js"
+ ],
+ "ターミナルで実行中": [
+  "chat.js"
+ ],
+ "ターミナルで確認待ちです。ターミナル側で答えると送れます": [
+  "chat.js"
+ ],
+ "ターミナルで稼働中のセッションへの送信は Windows でのみ使えます": [
+  "chat.js"
+ ],
+ "ターミナルへ送信…（ターミナルの入力欄に打ち込んで Enter）": [
+  "chat.js"
+ ],
+ "ターミナルへ送信（作業中に打ち込んだ扱いになります・Esc で中断）": [
+  "chat.js"
+ ],
+ "ダーク": [
+  "app.js"
+ ],
+ "チャットの入力欄へ": [
+  "app.js"
+ ],
+ "ツリー": [
+  "index.html"
+ ],
+ "ツリー / Git を表示": [
+  "app.js"
+ ],
+ "ツリーと Git を開く": [
+  "sidebar.js"
+ ],
+ "ツール結果の画像": [
+  "app.js"
+ ],
+ "テーマ": [
+  "index.html"
+ ],
+ "ディスク上のファイルが変更されています。": [
+  "editors.js"
+ ],
+ "トークン（残り": [
+  "chat.js"
+ ],
+ "ドラッグでサイドバーの幅を変更（ダブルクリックで元に戻す）": [
+  "index.html"
+ ],
+ "ドラッグで高さを変更": [
+  "sidebar.js"
+ ],
+ "バイナリファイルです": [
+  "editors.js"
+ ],
+ "ファイル": [
+  "palette.js",
+  "search.js"
+ ],
+ "ファイル &nbsp;": [
+  "workbench.js"
+ ],
+ "ファイルの編集は確認なしで許可する": [
+  "app.js"
+ ],
+ "ファイルを絞り込む": [
+  "index.html"
+ ],
+ "ファイルを開いていると、行番号で移動できます": [
+  "palette.js"
+ ],
+ "ファイルを開く…": [
+  "app.js"
+ ],
+ "ファイルを開く（名前のあいまい検索、main.rs:42 で行も指定）": [
+  "app.js"
+ ],
+ "ファイル名で検索（> コマンド  : 行へ移動  @ セッション）": [
+  "palette.js"
+ ],
+ "フォルダを 1 階層ずつ表示します": [
+  "sidebar.js"
+ ],
+ "フォルダを選んでください": [
+  "app.js"
+ ],
+ "ブラウザで開く": [
+  "editors.js"
+ ],
+ "ブランチ": [
+  "sidebar.js"
+ ],
+ "プロジェクトツリー（Ctrl+Shift+E）": [
+  "index.html"
+ ],
+ "プロセスを終了します。会話は残るので、あとからこの画面で続きを送れば再開できます。": [
+  "chat.js"
+ ],
+ "プロンプト一覧": [
+  "chat.js"
+ ],
+ "ペインいっぱい": [
+  "index.html"
+ ],
+ "ペイン配置を初期化": [
+  "index.html"
+ ],
+ "ペイン配置を初期化（このリポジトリ）": [
+  "app.js"
+ ],
+ "ポップアップがブロックされました。許可してから再度開いてください。": [
+  "editors.js"
+ ],
+ "メインの": [
+  "team.js"
+ ],
+ "メニュー": [
+  "chat.js"
+ ],
+ "モデル": [
+  "chat.js"
+ ],
+ "モデルを": [
+  "chat.js"
+ ],
+ "モデルを切り替える": [
+  "chat.js"
+ ],
+ "モデル名を入力して Enter（例: gpt-5.5 / pro / provider/model）": [
+  "chat.js"
+ ],
+ "モデル（": [
+  "chat.js"
+ ],
+ "ライト": [
+  "app.js"
+ ],
+ "リポジトリが分からないため開けません": [
+  "code.js"
+ ],
+ "リポジトリが選ばれていません": [
+  "code.js"
+ ],
+ "リポジトリに紐づくセッションはありません": [
+  "sidebar.js"
+ ],
+ "リポジトリの URL": [
+  "app.js"
+ ],
+ "リポジトリを絞り込む、またはフォルダのパスを入力": [
+  "app.js"
+ ],
+ "リポジトリを追加": [
+  "app.js"
+ ],
+ "リポジトリを追加（ローカル / git clone）": [
+  "app.js",
+  "index.html"
+ ],
+ "リポジトリを選んでください": [
+  "palette.js",
+  "search.js"
+ ],
+ "レイアウト": [
+  "index.html"
+ ],
+ "ログ": [
+  "sidebar.js"
+ ],
+ "ローカルのフォルダ": [
+  "app.js"
+ ],
+ "ローカルコマンド": [
+  "app.js"
+ ],
+ "一丁上がり": [
+  "app.js"
+ ],
+ "一致するセッションはありません": [
+  "sidebar.js"
+ ],
+ "一覧から外す": [
+  "sidebar.js"
+ ],
+ "一覧から外す（フォルダは消えません）": [
+  "sidebar.js"
+ ],
+ "一覧を見る": [
+  "index.html"
+ ],
+ "上のカードに答えると続きます": [
+  "chat.js"
+ ],
+ "上のフォルダ": [
+  "app.js"
+ ],
+ "上書き保存": [
+  "editors.js"
+ ],
+ "上書き保存しました": [
+  "editors.js"
+ ],
+ "上流": [
+  "sidebar.js"
+ ],
+ "下ごしらえ中": [
+  "app.js"
+ ],
+ "不明な種類:": [
+  "workbench.js"
+ ],
+ "並べて表示": [
+  "index.html",
+  "sidebar.js"
+ ],
+ "並べて表示中": [
+  "sidebar.js"
+ ],
+ "中断": [
+  "team.js"
+ ],
+ "中断しました": [
+  "chat.js"
+ ],
+ "中身が 1 つだけのフォルダをまとめて表示します": [
+  "sidebar.js"
+ ],
+ "中身が 1 つだけのフォルダをまとめて表示（main/java/jp/co/…）": [
+  "index.html"
+ ],
+ "人": [
+  "team.js"
+ ],
+ "人で並行": [
+  "team.js"
+ ],
+ "人作業中": [
+  "team.js"
+ ],
+ "仕上がりました": [
+  "app.js"
+ ],
+ "仕上げ中": [
+  "app.js"
+ ],
+ "件": [
+  "code.js",
+  "sidebar.js"
+ ],
+ "件 ·": [
+  "search.js"
+ ],
+ "件、git add -A）": [
+  "sidebar.js"
+ ],
+ "件。": [
+  "sidebar.js"
+ ],
+ "件待機中": [
+  "chat.js"
+ ],
+ "件選択": [
+  "sidebar.js"
+ ],
+ "会話 →": [
+  "team.js"
+ ],
+ "会話の記録はゴミ箱（~/.oyakata/trash）に移り、30 日後に消えます。": [
+  "app.js"
+ ],
+ "会話へ": [
+  "team.js"
+ ],
+ "体制図": [
+  "chat.js"
+ ],
+ "体制図 ·": [
+  "team.js"
+ ],
+ "体制図 —": [
+  "team.js"
+ ],
+ "体制図: サブエージェントの構成と、それぞれの役割・作業状況": [
+  "chat.js"
+ ],
+ "体制図を開く": [
+  "app.js"
+ ],
+ "何でも屋": [
+  "team.js"
+ ],
+ "何をしましょう？": [
+  "app.js"
+ ],
+ "何をしましょう？（": [
+  "chat.js"
+ ],
+ "作業ツリー": [
+  "editors.js"
+ ],
+ "作業ツリーに変更はありません": [
+  "sidebar.js"
+ ],
+ "作業ログを表示": [
+  "chat.js"
+ ],
+ "作業ログを表示します": [
+  "app.js",
+  "chat.js"
+ ],
+ "作業ログを隠しました": [
+  "app.js"
+ ],
+ "作業ログを隠しました（会話だけを表示）": [
+  "chat.js"
+ ],
+ "作業ログを隠す": [
+  "chat.js"
+ ],
+ "作業ログ（ツール呼び出し・思考・システム）を表示する": [
+  "index.html"
+ ],
+ "作業中": [
+  "app.js",
+  "sidebar.js",
+  "team.js"
+ ],
+ "作業中…（送った指示は今のターンが終わってから": [
+  "chat.js"
+ ],
+ "作業中に指示を送る…（次の区切りで Claude に渡ります · Esc で中断）": [
+  "chat.js"
+ ],
+ "保存": [
+  "app.js"
+ ],
+ "保存していない変更があります": [
+  "workbench.js"
+ ],
+ "保存しました:": [
+  "editors.js"
+ ],
+ "修正してほしい点（拒否時に Claude へ伝わります）": [
+  "chat.js"
+ ],
+ "修正を依頼": [
+  "chat.js"
+ ],
+ "元に戻しました": [
+  "app.js"
+ ],
+ "元に戻す": [
+  "app.js"
+ ],
+ "全体を表示（": [
+  "app.js"
+ ],
+ "全文検索 &nbsp;": [
+  "workbench.js"
+ ],
+ "全文検索（Ctrl+Shift+F）": [
+  "index.html"
+ ],
+ "全文検索（Enter）": [
+  "index.html"
+ ],
+ "全文検索（すべての会話）": [
+  "app.js"
+ ],
+ "全文検索（ファイル / すべての会話）": [
+  "app.js"
+ ],
+ "全文検索（ファイル）": [
+  "app.js"
+ ],
+ "再接続中…": [
+  "app.js"
+ ],
+ "再読み込み": [
+  "index.html"
+ ],
+ "再開時に適用": [
+  "chat.js"
+ ],
+ "分": [
+  "app.js"
+ ],
+ "分前": [
+  "app.js"
+ ],
+ "分割するには、このペインにタブが 2 つ以上必要です": [
+  "workbench.js"
+ ],
+ "判断": [
+  "app.js"
+ ],
+ "判断待ち": [
+  "app.js",
+  "sidebar.js"
+ ],
+ "判断待ち]": [
+  "app.js"
+ ],
+ "別のプロセスで動いています（終わると削除できます）": [
+  "sidebar.js"
+ ],
+ "別のプロセスで動いているセッションは削除できません。終わってから削除してください。": [
+  "app.js"
+ ],
+ "別のプロセスで実行中": [
+  "chat.js"
+ ],
+ "刻み中": [
+  "app.js"
+ ],
+ "削除": [
+  "app.js"
+ ],
+ "削除しました": [
+  "app.js"
+ ],
+ "前のセッションからの引き継ぎ要約": [
+  "app.js"
+ ],
+ "努力レベル": [
+  "chat.js"
+ ],
+ "努力レベル（開始・再開時に適用）": [
+  "chat.js"
+ ],
+ "単語単位で検索": [
+  "index.html"
+ ],
+ "参照を検索": [
+  "app.js"
+ ],
+ "右横の別ウィンドウで開く": [
+  "editors.js"
+ ],
+ "回": [
+  "chat.js"
+ ],
+ "回答": [
+  "app.js",
+  "fx.js"
+ ],
+ "回答する": [
+  "chat.js"
+ ],
+ "図面を確認中": [
+  "app.js"
+ ],
+ "報告": [
+  "team.js"
+ ],
+ "墨付け中": [
+  "app.js"
+ ],
+ "変更": [
+  "sidebar.js"
+ ],
+ "変更したファイル": [
+  "chat.js"
+ ],
+ "変更の要約": [
+  "sidebar.js"
+ ],
+ "外す": [
+  "sidebar.js"
+ ],
+ "大": [
+  "index.html"
+ ],
+ "大文字と小文字を区別": [
+  "index.html"
+ ],
+ "失敗": [
+  "team.js"
+ ],
+ "安全な操作は自動で許可し、危ない操作だけ確認する（既定）": [
+  "app.js"
+ ],
+ "完了": [
+  "app.js",
+  "team.js"
+ ],
+ "定義の検索に失敗:": [
+  "code.js"
+ ],
+ "定義へ移動": [
+  "app.js"
+ ],
+ "定義を探せる名前ではありません": [
+  "code.js"
+ ],
+ "実行": [
+  "app.js"
+ ],
+ "寸法取り中": [
+  "app.js"
+ ],
+ "対象": [
+  "sidebar.js"
+ ],
+ "対象のパス（例: *.java, src/, :!*.lock）": [
+  "index.html"
+ ],
+ "小": [
+  "index.html"
+ ],
+ "左の一覧からセッションを開くか、": [
+  "workbench.js"
+ ],
+ "差戻": [
+  "app.js",
+  "fx.js"
+ ],
+ "広い": [
+  "index.html"
+ ],
+ "往復": [
+  "sidebar.js"
+ ],
+ "待機・判断待ちになったらデスクトップ通知": [
+  "index.html"
+ ],
+ "待機・判断待ちになったら通知します": [
+  "app.js"
+ ],
+ "待機中": [
+  "app.js"
+ ],
+ "思考": [
+  "app.js"
+ ],
+ "戻る": [
+  "app.js"
+ ],
+ "戻る場所はありません": [
+  "code.js"
+ ],
+ "承知しました。取りかかります…": [
+  "chat.js"
+ ],
+ "承認": [
+  "fx.js"
+ ],
+ "承認したら判子を押す": [
+  "index.html"
+ ],
+ "承認して進める": [
+  "chat.js"
+ ],
+ "折り畳む": [
+  "app.js",
+  "index.html"
+ ],
+ "拍子木を鳴らす": [
+  "app.js"
+ ],
+ "拒否": [
+  "chat.js"
+ ],
+ "拒否の理由（任意、Claude に伝わります）": [
+  "chat.js"
+ ],
+ "指示": [
+  "chat.js"
+ ],
+ "指示を入力…（": [
+  "chat.js"
+ ],
+ "接続中": [
+  "app.js"
+ ],
+ "接続中…": [
+  "index.html"
+ ],
+ "操作のたびに確認する": [
+  "app.js"
+ ],
+ "文字": [
+  "app.js"
+ ],
+ "文字)": [
+  "app.js"
+ ],
+ "文字サイズ": [
+  "index.html"
+ ],
+ "新しいセッション": [
+  "app.js",
+  "chat.js",
+  "index.html",
+  "sidebar.js",
+  "workbench.js"
+ ],
+ "新しいセッション ·": [
+  "chat.js"
+ ],
+ "新しいタブ": [
+  "editors.js"
+ ],
+ "新しいタブで開く": [
+  "editors.js"
+ ],
+ "新しい上流（origin）": [
+  "sidebar.js"
+ ],
+ "新しい出力 ↓": [
+  "chat.js"
+ ],
+ "既定": [
+  "app.js",
+  "chat.js"
+ ],
+ "既定では <code>~/repos/名前</code> に置きます。": [
+  "app.js"
+ ],
+ "既定のモデル": [
+  "app.js",
+  "chat.js"
+ ],
+ "日前": [
+  "app.js"
+ ],
+ "日月火水木金土": [
+  "app.js"
+ ],
+ "日本語": [
+  "app.js",
+  "index.html"
+ ],
+ "昨日": [
+  "app.js"
+ ],
+ "時間": [
+  "app.js"
+ ],
+ "時間前": [
+  "app.js"
+ ],
+ "更新": [
+  "sidebar.js",
+  "team.js"
+ ],
+ "書込": [
+  "chat.js"
+ ],
+ "最近": [
+  "palette.js"
+ ],
+ "木取り中": [
+  "app.js"
+ ],
+ "未送信コミット": [
+  "sidebar.js"
+ ],
+ "未開始": [
+  "chat.js"
+ ],
+ "本文の幅": [
+  "index.html"
+ ],
+ "棟梁": [
+  "team.js"
+ ],
+ "検索": [
+  "index.html"
+ ],
+ "検索する範囲": [
+  "index.html"
+ ],
+ "標準": [
+  "index.html"
+ ],
+ "権限モードは": [
+  "app.js"
+ ],
+ "次のターンから適用": [
+  "chat.js"
+ ],
+ "次のターンで渡します": [
+  "chat.js"
+ ],
+ "次の区切りで渡します": [
+  "chat.js"
+ ],
+ "正規表現": [
+  "index.html"
+ ],
+ "段取り中": [
+  "app.js"
+ ],
+ "段取り役": [
+  "team.js"
+ ],
+ "添付画像": [
+  "app.js"
+ ],
+ "準備中": [
+  "team.js"
+ ],
+ "特大": [
+  "index.html"
+ ],
+ "確認待ち": [
+  "chat.js"
+ ],
+ "秒": [
+  "app.js"
+ ],
+ "移動前の場所へ戻る / 進む": [
+  "app.js"
+ ],
+ "稼働中": [
+  "sidebar.js"
+ ],
+ "空のセッションも一覧に出す": [
+  "index.html"
+ ],
+ "第": [
+  "team.js"
+ ],
+ "終わったら拍子木を鳴らす": [
+  "index.html"
+ ],
+ "終了": [
+  "app.js",
+  "chat.js"
+ ],
+ "終了してから削除": [
+  "sidebar.js"
+ ],
+ "終了して削除": [
+  "app.js"
+ ],
+ "組み上げ中": [
+  "app.js"
+ ],
+ "結果": [
+  "app.js"
+ ],
+ "絞り込む": [
+  "palette.js"
+ ],
+ "編集": [
+  "chat.js"
+ ],
+ "考え中…": [
+  "team.js"
+ ],
+ "職人": [
+  "team.js"
+ ],
+ "自由記述": [
+  "chat.js"
+ ],
+ "行": [
+  "app.js"
+ ],
+ "行へ移動": [
+  "app.js"
+ ],
+ "行へ移動…": [
+  "app.js"
+ ],
+ "行番号を入力（1〜": [
+  "palette.js"
+ ],
+ "行目へ移動": [
+  "palette.js"
+ ],
+ "行）": [
+  "app.js"
+ ],
+ "表示: Git": [
+  "app.js"
+ ],
+ "表示: サイドバーの表示 / 非表示": [
+  "app.js"
+ ],
+ "表示: セッション一覧": [
+  "app.js"
+ ],
+ "表示: ツリー": [
+  "app.js"
+ ],
+ "表示: ライト / ダーク切替": [
+  "app.js"
+ ],
+ "表示: 作業ログの表示 / 非表示": [
+  "app.js"
+ ],
+ "表示するリポジトリ（セッションを選ぶと自動で切り替わります）": [
+  "index.html"
+ ],
+ "裏で実行": [
+  "team.js"
+ ],
+ "親方": [
+  "fx.js",
+  "team.js"
+ ],
+ "親方ことば（作業中の掛け声・労いのひとこと）": [
+  "index.html"
+ ],
+ "親方の判断待ち": [
+  "chat.js"
+ ],
+ "言語 / Language": [
+  "app.js",
+  "index.html"
+ ],
+ "計画の承認": [
+  "chat.js"
+ ],
+ "設定": [
+  "app.js",
+  "index.html"
+ ],
+ "設定係": [
+  "team.js"
+ ],
+ "許可": [
+  "chat.js"
+ ],
+ "許可の確認": [
+  "chat.js"
+ ],
+ "試しに鳴らす": [
+  "index.html"
+ ],
+ "該当なし": [
+  "palette.js"
+ ],
+ "認証が必要な場合は、ターミナルで一度 git の認証を済ませておいてください。": [
+  "app.js"
+ ],
+ "説明": [
+  "app.js"
+ ],
+ "読みやすい幅": [
+  "index.html"
+ ],
+ "読み込みに失敗しました:": [
+  "chat.js"
+ ],
+ "読み込み中…": [
+  "sidebar.js"
+ ],
+ "読み込み直す": [
+  "editors.js"
+ ],
+ "調べて計画を立てるだけ（変更しない）": [
+  "app.js"
+ ],
+ "調べ役": [
+  "team.js"
+ ],
+ "質問": [
+  "app.js",
+  "chat.js"
+ ],
+ "追加": [
+  "app.js"
+ ],
+ "追加しました:": [
+  "app.js"
+ ],
+ "送信すると OYAKATA がこのセッションを引き継いで再開します…": [
+  "chat.js"
+ ],
+ "送信済み。Claude が次のツール呼び出しの区切り（その前に今の作業が終わればその直後）で読みます": [
+  "chat.js"
+ ],
+ "送信済み。今のターンが終わると次のターンとして渡します": [
+  "chat.js"
+ ],
+ "送信（Enter）": [
+  "chat.js"
+ ],
+ "通知が許可されていません": [
+  "app.js"
+ ],
+ "進む": [
+  "app.js"
+ ],
+ "遅くまでお疲れさまです、親方。何を片付けましょう？": [
+  "app.js"
+ ],
+ "選んだフォルダを一覧に加えます（Git リポジトリでなくても可）。": [
+  "app.js"
+ ],
+ "選択した": [
+  "sidebar.js"
+ ],
+ "釘打ち中": [
+  "app.js"
+ ],
+ "鉋がけ中": [
+  "app.js"
+ ],
+ "鑿を研ぎ中": [
+  "app.js"
+ ],
+ "閉じる": [
+  "app.js",
+  "workbench.js"
+ ],
+ "開く": [
+  "chat.js",
+  "editors.js"
+ ],
+ "開始": [
+  "app.js"
+ ],
+ "開始しています…": [
+  "chat.js"
+ ],
+ "陣": [
+  "team.js"
+ ],
+ "高コントラスト（明）": [
+  "app.js"
+ ],
+ "高コントラスト（暗）": [
+  "app.js"
+ ],
+ "（OYAKATA が実行）": [
+  "chat.js"
+ ],
+ "（すべての会話）": [
+  "search.js"
+ ],
+ "（ステージ済み）": [
+  "sidebar.js"
+ ],
+ "（ターミナルで実行）": [
+  "chat.js"
+ ],
+ "（ターミナルで答えてください）": [
+  "chat.js"
+ ],
+ "（作業中なら）中断 / メニューを閉じる": [
+  "app.js"
+ ],
+ "（入力欄で）権限モードを切替": [
+  "app.js"
+ ],
+ "（別のプロセスで実行）": [
+  "chat.js"
+ ],
+ "（役割の説明なし）": [
+  "team.js"
+ ],
+ "（未ステージ）": [
+  "sidebar.js"
+ ],
+ "（無題）": [
+  "app.js"
+ ],
+ "（開始中）": [
+  "chat.js"
+ ],
+ "）\n上限に近づくと Claude Code が自動で圧縮します。": [
+  "chat.js"
+ ],
+ "📂 フォルダを参照…": [
+  "app.js"
+ ],
+ "📋 計画": [
+  "app.js"
+ ]
+}

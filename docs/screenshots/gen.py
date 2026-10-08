@@ -266,5 +266,40 @@ live(pids[0], S1, RECIPE, "busy", "レシピ検索に材料フィルタを追加
 live(pids[1], S4, INFRA, "waiting", "staging の plan 差分を確認", waitingFor="permission: Bash")
 live(pids[2], S5, RECIPE, "idle", "README を英語化")
 
+# ------------------------------------------------------------------ other agents
+# The captured test fixtures of Codex CLI, Gemini CLI and Copilot CLI (tests/fixtures), placed
+# where each agent keeps its sessions, with their working directory pointed at the demo repo.
+# OpenCode keeps sessions in a database, so it is not part of the demo.
+FIX = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "tests", "fixtures")
+AGENTS = os.path.join(ROOT, "agents")
+
+
+def retarget(text):
+    return text.replace("C:\\\\Temp\\\\agents\\\\work", RECIPE.replace("\\", "\\\\")).replace("C:\\Temp\\agents\\work", RECIPE).replace("C:\\\\Temp\\\\agents", RECIPE.replace("\\", "\\\\")).replace("C:\\Temp\\agents", RECIPE)
+
+
+def copy_tree(src, dst):
+    for base, _, files in os.walk(src):
+        for f in files:
+            rel = os.path.relpath(os.path.join(base, f), src)
+            with open(os.path.join(base, f), encoding="utf-8") as fh:
+                write(os.path.join(dst, rel), retarget(fh.read()))
+
+
+codex_home = os.path.join(AGENTS, "codex")
+copy_tree(os.path.join(FIX, "codex"), os.path.join(codex_home, "sessions", "2026", "10", "08"))
+gemini_home = os.path.join(AGENTS, "gemini", ".gemini")
+copy_tree(os.path.join(FIX, "gemini"), os.path.join(gemini_home, "tmp", "recipe-app", "chats"))
+write(os.path.join(gemini_home, "projects.json"), json.dumps({"projects": {RECIPE.lower(): "recipe-app"}}))
+copilot_home = os.path.join(AGENTS, "copilot")
+copy_tree(os.path.join(FIX, "copilot"), os.path.join(copilot_home, "session-state"))
+write(os.path.join(ROOT, "agents-env.ps1"), "\n".join([
+    f"$env:CODEX_HOME = '{codex_home}'",
+    f"$env:HOME = '{os.path.dirname(gemini_home)}'",
+    f"$env:USERPROFILE = '{os.path.dirname(gemini_home)}'",
+    f"$env:COPILOT_HOME = '{copilot_home}'",
+    f"$env:OYAKATA_HOME = '{os.path.join(ROOT, 'oyakata-home')}'",
+]) + "\n")
+
 write(os.path.join(ROOT, "ids.json"), json.dumps({"S1": S1, "S2": S2, "S3": S3, "S4": S4, "S5": S5, "recipe": RECIPE, "docs": DOCS, "infra": INFRA}, ensure_ascii=False, indent=1))
 print("demo built at", ROOT, "pids", pids)
