@@ -1,131 +1,113 @@
 <div align="center">
 
-<img src="web/icon.svg" width="96" height="96" alt="OYAKATA logo">
+<img src="web/icon.svg" width="96" height="96" alt="OYAKATA">
 
 # OYAKATA（親方）
 
-**Claude Code のための、ブラウザ上の司令塔。**<br>
-リポジトリをまたいで走るすべてのセッションを見渡し、出力を HTML で読み、指示を送り、変更を確かめて出荷する。全部ブラウザのタブ 1 枚で。
+**Claude Code のセッションを、ブラウザから見渡して指図する。**
+
+複数のリポジトリで走っている Claude Code を 1 つの画面に集め、読みやすく表示し、その場で指示を送れる司令塔です。
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Built with Rust](https://img.shields.io/badge/built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](#動作環境)
-[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A2BE2.svg)](#2-oyakata-スキルを入れる)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](#ターミナルから使う)
+[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A2BE2.svg)](#skill-で使い始める)
 
 [English](README.md) | **日本語**
 
 </div>
 
----
+![OYAKATA の画面。左にセッション一覧、右に Claude の回答が表・図・コード付きで表示されている](docs/images/hero.png)
 
-## 目次
+## どんなもの？
 
-- [OYAKATA とは](#oyakata-とは)
-- [できること](#できること)
-- [クイックスタート](#クイックスタート)
-- [インストール](#インストール)
-- [使い方](#使い方)
-  - [Claude Code の中から](#claude-code-の中から)
-  - [ターミナルから](#ターミナルから)
-  - [同じセッションをターミナルとブラウザの両方から使う](#同じセッションをターミナルとブラウザの両方から使う)
-  - [ブラウザから話しかけられるセッション](#ブラウザから話しかけられるセッション)
-  - [常駐を長く使うとき](#常駐を長く使うとき)
-- [画面の案内](#画面の案内)
-- [キーボードショートカット](#キーボードショートカット)
-- [仕組み・プライバシー・安全性](#仕組みプライバシー安全性)
-- [開発](#開発)
-- [ライセンス](#ライセンス)
+Claude Code を 2 つ 3 つ並行して動かし始めると、ターミナルだけでは手に負えなくなってきます。
 
-## OYAKATA とは
+- どのターミナルで何が進んでいるのか分からない
+- 表や図を含む長い回答が、ターミナルでは読みづらい
+- ツール呼び出しのログで会話が埋まってしまう
 
-複数のリポジトリで Claude Code を同時に走らせ始めると、ターミナルだけでは追いきれなくなります。どのセッションが何をしているか分からない。表や図を含む長い回答が読みづらい。ツール呼び出しのログが会話を埋めてしまう。
+OYAKATA は、これをブラウザの画面 1 枚で解決します。Claude Code が `~/.claude` に残す記録を読んで表示するので、Claude Code の起動方法や使い方を変える必要はありません。データはすべて手元の PC の中で完結し、外には出ません。
 
-OYAKATA は 1 つの Rust バイナリです。ローカルに小さなサーバーを立て、`~/.claude/projects` 配下の全セッションを索引化し、ブラウザの画面を開きます。そこでは次のことができます。
+| | できること |
+| --- | --- |
+| **見渡す** | 全リポジトリのセッションを一覧。動いているものは上に固定され、作業中 / 待機中 / 判断待ち が 1 秒ごとに更新される |
+| **読む** | Markdown・表・コード・図を HTML として描画。長い回答には目次と折りたたみが付く |
+| **指示する** | ブラウザの入力欄から指示を送る。権限の確認や質問への回答もその場でできる |
+| **仕上げる** | Claude が変えたファイルを隣のエディタで開き、差分を確かめ、commit / push まで済ませる |
 
-- **見る** — すべてのセッションをリポジトリ別に並べ、稼働中のものを上に固定し、状態を 1 秒ごとに更新する。
-- **読む** — 出力を Markdown・Mermaid 図・シンタックスハイライト・表を含む HTML として描画する。
-- **動かす** — 新しいセッションを始め、指示を送り（Claude が作業中でも）、権限の確認や質問に答え、計画を承認する。
-- **出荷する** — リポジトリのファイル、差分、Git 操作を会話のすぐ隣で開く。
+> 名前の由来: 親方（あなた）が、棟梁（メインの Claude）と職人（サブエージェント）の仕事ぶりを見て指図する、という見立てです。
 
-データはマシンの外に出ません。実行時の依存もありません。Claude Code の起動方法を変える必要もなく、閲覧は Claude Code が書き出すファイル（`projects/*/*.jsonl`、`sessions/*.json`）を読むだけです。
+## Skill で使い始める
 
-**名前について。** 親方（おやかた）は工房を束ねる人です。OYAKATA では、あなたが親方、メインの Claude が棟梁、サブエージェントが職人という見立てになっています。画面もそれに合わせて、承認には朱色の判子が押され、職人の仕事が終わると拍子木が鳴ります。
+Claude Code のプラグインとして `/oyakata` スキルを入れるだけで使えます。Rust のビルドは要りません。
 
-## できること
+**1. プラグインを入れる**（Claude Code の中で）
 
-### 全体を一度に見渡す
-
-- **全リポジトリをひとつの一覧に。** セッションは走っていたリポジトリの下にまとまり、稼働中のものは一番上に固定されます。
-- **ライブの状態表示。** 各セッションに「作業中 / 待機中 / 判断待ち」が付き、1 秒ごとに更新されます。タブのアイコンにも点が付くので、別タブを見ていても気づけます。
-- **マルチエージェントの体制図（👥）。** 親方（あなた）→ 棟梁（メインの Claude）→ 職人（サブエージェント）をライブで図示。同時に振られた仕事は「陣」にまとまり、各職人の役割・状態・いま実行中のツール・終わったときの報告が見えます。
-- **コンテキストのメーター。** 直近の応答時点のトークン数 ÷ モデルのコンテキスト長をメーターで表示（65% で黄、85% で赤）。
-- **通知。** 作業が終わる（busy → idle）と拍子木が「カン、カン」と鳴ります。終了や判断待ちをデスクトップ通知で受け取ることもできます（任意）。
-
-### 目を細めずに読む
-
-- **Markdown を描画。** ```` ```mermaid ```` は図に、コードはハイライト、表は表に。
-- **長い回答でも迷わない。** 冒頭に目次、見出しごとに折り畳み、28 行を超えるコードは畳んで表示、スクロール中は読んでいる回答の元の質問を上部に固定、右端のレールでプロンプト間を移動。
-- **作業ログは既定で非表示。** ツール呼び出し・思考・システムの差し込みは会話から消え、代わりに入力欄の上の 1 行で今何をしているかが分かります（`✻ 墨付け中… Bash: … (12秒 · esc で中断)`）。設定で全文表示に切り替えられます。
-- **ファイル参照はクリックで開く。** 会話の中の `src/main.rs:42` をクリックするとエディタでその行に飛びます。
-
-### ブラウザからセッションを動かす
-
-- **ワンクリックで新しいセッション。** 「＋」でフォルダを選ぶだけ。空のチャットが開き、最初の指示を送った時点で Claude が起動します。権限モードは常に **auto** から始まります。
-- **作業中でも送れる。** 送った指示は次のツール呼び出しの区切りで Claude に渡ります。ターミナルで作業中に打ち込むのと同じです。渡るまでは入力欄の上に「⏳ 次の区切りで渡します」と並び、Esc で中断しても捨てられません。
-- **権限・質問・計画はチャットの中で。** 権限の確認、`AskUserQuestion`、計画の承認（`ExitPlanMode`）はカードとして表示され、その場で答えられます。許可・承認には朱色の「承認」、差し戻しには藍色の「差戻」の判子が押されます。
-- **ターミナルと同じステータス行。** 入力欄の下に、左は権限モード（`⏵⏵ auto mode on`、Shift+Tab で切替）、右はモデル・努力レベル・コンテキスト使用率。実行中のセッションでもモードとモデルをその場で切り替えられます。
-- **ターミナルのセッションにも話しかける（Windows）。** ターミナルで `claude` を直接起動したセッションには、「ターミナルへ送信」でそのターミナルに打ち込めます。終了後は「引き継ぎ」で OYAKATA の持ち物にでき、以降はブラウザから全部操作できます。
-
-### 会話の隣にワークベンチ
-
-- **ペインを自由に分割。** VS Code のようにタブをドラッグして左右上下に分割。チャット・エディタ・差分・URL・サブエージェント・体制図がすべてタブです。配置はリポジトリごとに記憶されます。
-- **Claude が変えたファイルをその場で直す。** CodeMirror のエディタで編集・保存（Ctrl+S）。ディスク上で変わっていれば衝突を知らせ、Claude が開いているファイルを書き換えたら自動で読み直します。
-- **ページを離れずに Git。** サイドバーに作業ツリーの変更、ログ、ブランチ。commit / push / pull は確認付きです。
-- **付いてくるサイドバー。** セッション一覧 / ツリー / Git を切り替えるか、「並べて表示」で同時表示（境目はドラッグで調整）。セッションを選ぶとツリーと Git がそのリポジトリに切り替わります。
-- **まだセッションの無いリポジトリも。** 「リポジトリ ＋追加」でローカルのフォルダを取り込むか、URL から `git clone`。ghq を使っていれば ghq と同じ配置に置かれます。
-
-### コードを探す・追う
-
-- **言語サーバー無しで定義と参照へ。** `F12` / `Ctrl+クリック` で定義へ、`Shift+F12` で参照一覧、`Alt+←` で戻る。候補は `git grep -P` と宣言の形（`fn` / `class` / `def` / `func` / `public …`）から集め、宣言らしさ・同じファイル・同じ拡張子・近いフォルダで順位付けします。
-- **あいまい検索と全文検索。** `Ctrl+P` でファイル名（`file:line` で行も）、`Ctrl+Shift+F` でリポジトリの全文検索（大文字小文字・単語・正規表現・対象パス）か、すべての会話の横断検索。
-- **深いパッケージを 1 行に。** 中身が 1 フォルダだけの階層は `src/main/java/jp/co/…` のようにまとめて表示（切替可）。開いたファイルはツリーで自動的に表示されます。
-
-### 片付けと居心地
-
-- **元に戻せるゴミ箱。** 一覧からセッションを削除すると記録は `~/.claude/oyakata-trash` へ移り、直後なら「元に戻す」、30 日で自動的に消えます。
-- **テーマ。** ライト / ダーク / セピア / Solarized / Nord / Dracula / 高コントラスト、アクセント色、文字サイズ、本文の幅。
-
-## クイックスタート
-
-```bash
-# 1. 本体を入れる（GitHub Releases のビルド済みバイナリ。Rust は不要）
-curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.sh | sh   # macOS / Linux
-irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex       # Windows (PowerShell)
-
-# 2. /oyakata スキルを Claude Code のプラグインとして入れる
-claude plugin marketplace add ShintaroOba/oyakata
-claude plugin install oyakata@oyakata
-
-# 3. 常駐を立ててブラウザを開く
-oyakata
+```
+/plugin marketplace add ShintaroOba/oyakata
+/plugin install oyakata@oyakata
 ```
 
-あとは Claude Code のセッションの中で `/oyakata` と打てば、そのセッションを開いた状態で司令塔が立ち上がります。以降、Claude は「ブラウザで読まれる」ことを知っているので、図は Mermaid で、比較は表で書くようになります。
+ターミナルからなら `claude plugin marketplace add ShintaroOba/oyakata` → `claude plugin install oyakata@oyakata` です。
 
-## インストール
+**2. `/oyakata` と打つ**
 
-### 動作環境
+```
+/oyakata
+```
 
-| | |
-| --- | --- |
-| Rust | 不要。リリースごとにビルド済みバイナリを添付。ソースからビルドする場合のみ 1.80 以上 |
-| Claude Code | `claude` コマンド（OYAKATA からセッションを起動するため） |
-| git | ファイルツリー・差分・Git 操作のため |
-| OS | Windows / macOS / Linux。ターミナルで稼働中のセッションへの打ち込みは Windows のみ |
+初めて呼んだときは本体（`oyakata` コマンド）がまだ無いので、Claude がスキル同梱のスクリプトで [GitHub Releases](https://github.com/ShintaroOba/oyakata/releases) からビルド済みバイナリを入れます（Windows / macOS / Linux）。そのあと常駐プロセスを立ち上げ、ブラウザが今のセッションを開いた状態で起動します。
 
-### 1. 本体（`oyakata` コマンド）を入れる
+以降、そのセッションの Claude は「ブラウザで読まれている」ことを前提に、比較は表で、図は描画できる形（Mermaid）で書くようになります。
 
-Windows（x64 / arm64）、macOS（Intel / Apple Silicon）、Linux（x64 / arm64、静的リンク）のビルド済みバイナリを [GitHub Release](https://github.com/ShintaroOba/oyakata/releases) に添付しています。インストールスクリプトが環境に合うものを取り、SHA-256 を照合して PATH の通る場所に置きます。
+`/oyakata` と打たなくても、「ブラウザで見たい」「他のリポジトリの Claude は何してる？」のような言葉でもスキルは呼び出されます。
+
+## 画面の見かた
+
+### セッション一覧と会話
+
+![セッション一覧と会話（ダークテーマ）](docs/images/hero-dark.png)
+
+- **左のサイドバー**には、動いているセッションが上に、その下にリポジトリごとの履歴が並びます。点の色が状態です（橙: 作業中、緑: 待機中、紫: 判断待ち）。サイドバーの下にも「作業中 1 · 判断待ち 1」のように件数が出ます。
+- **セッションをクリック**すると会話が開きます。ツール呼び出しなどの作業ログは隠れていて、今何をしているかは入力欄の上の 1 行（`Bash: Run the filter tests … esc で中断`）で分かります。設定で作業ログを表示することもできます。
+- **入力欄の下**はターミナルと同じステータス行です。左が権限モード（Shift+Tab で切替）、右がモデル・努力レベル・コンテキスト使用率。
+
+### 新しいセッションを始める
+
+![新しいセッションのダイアログ](docs/images/new-session.png)
+
+ヘッダーの「＋」でフォルダを選ぶだけです。空のチャットが開き、最初の指示を送った時点で Claude が起動します。権限モードは auto から始まります。
+
+Claude が作業中でも指示を送れます。送った指示は次のツール呼び出しの区切りで Claude に渡り、それまでは入力欄の上に「次の区切りで渡します」と並びます。権限の確認、`AskUserQuestion` への回答、計画の承認もチャットの中のカードで答えられます。承認には朱色の「承認」、差し戻しには藍色の「差戻」の判子が押されます。
+
+### 体制図（サブエージェントの様子）
+
+![体制図](docs/images/team.png)
+
+チャット右上の「👥」を押すと、メインの Claude（棟梁）とサブエージェント（職人）の構成が見えます。誰がどの仕事を担当し、今どのツールを実行していて、終わったときに何を報告したか。並行で振られた仕事は「陣」にまとまり、ライブで更新されます。
+
+### ファイル・差分・Git
+
+![エディタと差分と Git ビュー](docs/images/workbench.png)
+
+会話の隣に、Claude が編集したファイルをエディタで開き（Ctrl+S で保存）、差分を見て、サイドバーの Git ビューから commit / push / pull まで行えます。ペインは VS Code のようにタブをドラッグして分割でき、配置はリポジトリごとに記憶されます。
+
+ほかにもこんなことができます。
+
+- `Ctrl+P` でファイル名のあいまい検索、`Ctrl+Shift+F` でリポジトリの全文検索とすべての会話の横断検索
+- エディタで `F12` / `Ctrl+クリック` で定義へ、`Shift+F12` で参照一覧（言語サーバー不要）
+- 会話の中の `src/main.rs:42` のようなファイル参照をクリックすると、その行がエディタで開く
+- 作業が終わると拍子木が「カン、カン」と鳴る。待機や判断待ちになったらデスクトップ通知（任意）
+- テーマはライト / ダーク / セピア / Solarized / Nord / Dracula / 高コントラスト。アクセント色、文字サイズ、本文の幅も変えられる
+- 要らないセッションは一覧から削除。記録はゴミ箱（`~/.claude/oyakata-trash`）に移り、30 日で消える
+
+## ターミナルから使う
+
+スキルを使わなくても、普通のコマンドとして動きます。本体は単一のバイナリで、実行時の依存はありません。
+
+### 本体を入れる
+
+ビルド済みバイナリ（Windows x64 / arm64、macOS Intel / Apple Silicon、Linux x64 / arm64）を [GitHub Releases](https://github.com/ShintaroOba/oyakata/releases) に置いています。インストールスクリプトが環境に合うものを取り、SHA-256 を照合して PATH の通る場所に置きます。
 
 ```bash
 # macOS / Linux: ~/.local/bin に置く
@@ -137,67 +119,38 @@ curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/in
 irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex
 ```
 
-この手順は飛ばしても構いません。Claude Code で初めて `/oyakata` と打ったとき、本体が無ければ Claude がプラグイン同梱の同じスクリプトを実行します。置き場所は `OYAKATA_INSTALL_DIR`、版は `OYAKATA_VERSION=v0.1.0` で指定できます。ダウンロードは `HTTPS_PROXY`（curl）/ システムのプロキシ設定（PowerShell）に従います。
+置き場所は `OYAKATA_INSTALL_DIR`、版は `OYAKATA_VERSION=v0.1.0` で指定できます。Rust（1.80 以上）がある環境なら `cargo install --git https://github.com/ShintaroOba/oyakata` でも入ります。
 
-Rust（1.80 以上）がある環境なら、ソースからビルドしても入ります。
+そのほかに必要なもの:
 
-```bash
-cargo install --git https://github.com/ShintaroOba/oyakata
-```
+| | |
+| --- | --- |
+| Claude Code | `claude` コマンド。ブラウザからセッションを起動するために使います |
+| git | ファイルツリー・差分・Git 操作に使います |
 
-### 2. `/oyakata` スキルを入れる
-
-スキルは、Claude に OYAKATA の起動方法と「ブラウザ向けの書き方」を教えるものです。プラグインとして入れると、マーケットプレイスの更新に追従します。
-
-```bash
-claude plugin marketplace add ShintaroOba/oyakata   # このリポジトリをマーケットプレイスとして登録
-claude plugin install oyakata@oyakata               # /oyakata（正式には /oyakata:oyakata）
-```
-
-Claude Code の中なら `/plugin marketplace add ShintaroOba/oyakata` → `/plugin install oyakata@oyakata` でも同じです。
-
-プラグインを使わない場合は、本体からスキルをコピーします。
+### 起動と停止
 
 ```bash
-oyakata install        # ~/.claude/skills/oyakata/SKILL.md を書き出す
+oyakata                     # 常駐を起動（既に動いていれば再利用）してブラウザを開く
+oyakata --focus <session>   # 指定したセッションを開いた状態で起動
+oyakata status              # 常駐が動いているか確認
+oyakata stop                # 常駐を停止（OYAKATA が起動したセッションも終了。会話はディスクに残る）
+oyakata install             # /oyakata スキルを ~/.claude/skills/oyakata にコピー（プラグインを使わない場合）
 ```
 
-### 3.（任意）全セッションで Mermaid を優先させる
+常駐を長く使うなら、Claude の中（`/oyakata`）からではなくターミナルで `oyakata` を実行して立ててください。Claude の中から立てた常駐は、その Claude セッションの終了に巻き込まれて止まることがあります。止まっても会話は残るので、ブラウザでそのセッションに送信すれば OYAKATA が引き継いで再開します。
 
-すべての Claude Code セッションで図を Mermaid で描かせたい場合は、`~/.claude/CLAUDE.md` に次の 1 行を足してください（`oyakata install` でも案内されます）。
-
-```
-図は ```mermaid フェンスで書く（OYAKATA がブラウザで描画する）。ASCIIアートで図を描かない。
-```
-
-## 使い方
-
-### Claude Code の中から
-
-```
-/oyakata
-```
-
-必要なら常駐を立ち上げ、今のセッションを開いた状態でブラウザが起動します。セッション ID を渡す（`/oyakata <session-id>`）とそのセッションが開きます。
-
-### ターミナルから
+<details>
+<summary>そのほかのコマンドとオプション</summary>
 
 | コマンド | 動作 |
 | --- | --- |
-| `oyakata` | 常駐を起動（既に動いていれば再利用）してブラウザを開く |
-| `oyakata --focus <session-id>` | 同上。指定したセッションを開く |
 | `oyakata --no-open` | ブラウザを開かずに常駐だけ起動 |
-| `oyakata status` | 常駐が動いているか確認 |
-| `oyakata stop` | 常駐を停止。OYAKATA が起動したセッションも終了するが、会話はディスクに残る |
 | `oyakata serve` | フォアグラウンドで実行（ログを見たいとき） |
-| `oyakata install` | `/oyakata` スキルを `~/.claude/skills/oyakata` にコピー |
-| `oyakata new "最初の指示"` | このフォルダで OYAKATA が持つセッションを始め、この端末を接続する |
-| `oyakata new --cwd <dir> "指示"` | フォルダを指定して同上。`--model`、`--mode`、`--effort`、`--no-attach` も指定できる |
-| `oyakata attach <session-id>` | OYAKATA が持つセッションにこの端末を接続する |
-| `oyakata attach --resume <session-id>` | 終了済みセッションを OYAKATA で再開する（最初の指示を聞かれる） |
+| `oyakata new "最初の指示"` | このフォルダで OYAKATA が持つセッションを始め、この端末を接続する。`--cwd <dir>`、`--model`、`--mode`、`--effort`、`--no-attach` も指定できる |
+| `oyakata attach <session-id>` | OYAKATA が持つセッションにこの端末を接続する（`/quit` で端末だけ離脱、`/stop` でセッション終了） |
+| `oyakata attach --resume <session-id>` | 終了済みのセッションを OYAKATA で再開する |
 | `oyakata sessions` | OYAKATA が今持っているセッションの一覧 |
-
-共通オプション:
 
 | オプション | 既定値 | 意味 |
 | --- | --- | --- |
@@ -209,90 +162,40 @@ oyakata install        # ~/.claude/skills/oyakata/SKILL.md を書き出す
 
 常駐のログは `~/.claude/oyakata.log` に出ます。
 
-### 同じセッションをターミナルとブラウザの両方から使う
-
-OYAKATA が持つセッションは、ブラウザのチャットからもターミナルからも入力できます。どちらから打っても同じ会話に入り、権限の確認や質問にもどちらからでも答えられます。
+OYAKATA が持つセッションは、ブラウザからもターミナルからも同じ会話に入力できます。権限の確認や質問にもどちらからでも答えられます。
 
 ```bash
 oyakata new "パーサーをリファクタして"   # ここで始めて、この端末を接続
-oyakata attach <session-id>            # 別の端末を接続（/quit で端末だけ離脱、/stop でセッション終了）
-oyakata attach --resume <session-id>   # 終了済みセッションを引き継いで再開
+oyakata attach <session-id>            # 別の端末からも同じ会話に入る
 ```
-
-権限モードは指定しなければ `auto` です。`--mode default|acceptEdits|plan|bypassPermissions` で変更できます。
-
-### ブラウザから話しかけられるセッション
-
-| セッション | ブラウザから |
-| --- | --- |
-| OYAKATA が起動したもの（ヘッダーやリポジトリの「＋」、`oyakata new`） | すべて操作できる。作業中でも送れて、次のツール呼び出しの区切りで渡る。権限の確認・質問もチャットで答える。Esc で中断、「⋯」→「セッションを終了」 |
-| 終了済み | 送信すると OYAKATA が `claude --resume` で引き継ぎ、以後は上の行と同じ（権限モードは auto から） |
-| ターミナルで稼働中（Windows） | 「ターミナルへ送信」でそのターミナルに打ち込んで Enter を押す。Esc で中断。確認待ちの間は送れない（Enter が既定の答えを選んでしまうため）。権限の確認はターミナル側で答える |
-| IDE 拡張・SDK で稼働中 | 送れない（打ち込む先のターミナルが無いため）。終了後に引き継げる |
-
-### 常駐を長く使うとき
-
-常駐は Claude Code の中（`/oyakata`）からではなく、ターミナルで `oyakata` を実行して立ててください。Claude の中から立てた常駐は、その Claude セッションの終了に巻き込まれて止まることがあります。止まっても会話は残るので、ブラウザでそのセッションに送信する（OYAKATA が引き継ぐ）か `oyakata attach --resume <id>` で続けられます。
-
-## 画面の案内
-
-```mermaid
-flowchart LR
-  subgraph browser[ブラウザ]
-    SB[サイドバー<br/>セッション一覧 / ツリー / Git]
-    WB[ワークベンチ<br/>ドラッグで分割するペイン]
-    CH[チャット<br/>会話 · 入力欄 · ステータス行 · 許可/質問/計画カード]
-    ED[エディタ · 差分 · URL · サブエージェント · 体制図]
-    WB --- CH
-    WB --- ED
-  end
-  subgraph oyakata[oyakata serve]
-    IDX[索引 + 1秒ごとの差分読み取り]
-    RUN[claude -p 子プロセス<br/>stream-json]
-    GIT[git コマンド / ファイル保存]
-    TYP[oyakata type-into<br/>コンソールへ打鍵]
-    SSE[/api/events SSE/]
-  end
-  subgraph claude[~/.claude]
-    P[projects/**/*.jsonl]
-    S[sessions/*.json]
-  end
-  TERM[ターミナルの claude]
-  P --> IDX --> SSE --> SB
-  S --> IDX
-  SSE --> CH
-  CH -->|送信 / 許可| RUN -->|追記| P
-  CH -->|ターミナルへ送信 / 中断| TYP --> TERM -->|追記| P
-  SB --> GIT
-  ED --> GIT
-```
-
-- **セッションをクリック**するとチャットが下のペインに開きます（VS Code のターミナルの位置）。同時にサイドバーのツリーと Git がそのリポジトリに切り替わります。
-- **新しいセッション**はヘッダーの「＋」でフォルダを選ぶだけです。リポジトリの横の「＋」ならフォルダ選択も要りません。空のチャットが開き、最初の指示で Claude が起動します。
-- **チャットの上部**は、状態の点・タイトル・リポジトリ名と、「👥 体制図」（サブエージェントがいるとき）・「⋯」メニュー（プロンプト一覧・変更したファイル・作業ログの表示切替・削除など）だけです。
-- **入力欄の下のステータス行**はターミナルの Claude と同じ並びです。左が権限モード（クリックか Shift+Tab で切替）、右がモデル（クリックで切替）・努力レベル・コンテキスト使用率。
-- **作業ログ**（ツール呼び出し・思考・システムの差し込み）は既定で会話から消しています。計画と Claude からの質問は会話に残ります。設定か「⋯」メニューで表示できます。
-- **長い回答**には目次、見出しごとの折り畳み、28 行超のコードの折り畳み、スクロール中の質問の固定、右端のレールによるプロンプト間の移動が付きます。
-- **ペインとタブ:** タブをドラッグして別のペインへ移す、またはペインの端に落として分割。サイドバーの行（セッション・ファイル・変更）もペインへ直接ドラッグできます。配置はブラウザに記憶され、設定の「ペイン配置を初期化」で戻せます。
-- **サイドバーの大きさ:** 右端をドラッグで幅を変更（ダブルクリックで元に戻す）。「並べて表示」ではセッション・ツリー・検索・Git の境目をドラッグして高さを変えられます。
-- **リポジトリごとの配置:** 別のリポジトリのセッションを選ぶと、ワークベンチ全体がそのリポジトリのタブに切り替わります。戻ると元のタブが未保存の編集ごとそのまま残っています。
-- **ツリーの操作:** 「⫽」で 1 フォルダだけの階層をまとめる表示を切替、「⊟」ですべて折りたたみ。
-- **判子と拍子木**は設定から止められます（「試しに鳴らす」で音を確認）。ブラウザの制約で、音はページを一度クリックするかキーを押した後から鳴ります。
-
-<details>
-<summary>ブラウザから動かすセッションの中身</summary>
-
-OYAKATA が起動するセッションは次の子プロセスです。
-
-```
-claude -p --input-format stream-json --output-format stream-json --permission-prompt-tool stdio --permission-mode auto
-```
-
-会話は通常どおり `~/.claude/projects` に書かれるので、表示は他のセッションと同じ経路です。実行中の権限モードとモデルの切替は stream-json の `set_permission_mode` / `set_model` で送ります。作業中に送った指示はそのまま stdin に書き、Claude Code が次のツール呼び出しの区切りで読みます。`--replay-user-messages` を付けているので読まれた時点でエコーが返り、それまでは待機中として表示します。Esc で中断しても待機中の指示は捨てられず、次のターンとして読まれます。
 
 </details>
 
-## キーボードショートカット
+## よくある質問
+
+**ブラウザから指示を送れるのは、どのセッション？**
+
+| セッション | ブラウザから |
+| --- | --- |
+| OYAKATA が起動したもの（「＋」や `oyakata new`） | すべて操作できる。作業中でも送れて、権限の確認や質問にもチャットで答えられる |
+| 終了済み | 送信すると OYAKATA が `claude --resume` で引き継ぎ、以後は上の行と同じ |
+| ターミナルで稼働中（Windows） | 「ターミナルへ送信」で、そのターミナルに打ち込んで Enter を押す。権限の確認はターミナル側で答える |
+| IDE 拡張・SDK で稼働中 | 送れない（打ち込む先のターミナルが無いため）。終了後に引き継げる |
+
+**データはどこに行く？**
+
+どこにも行きません。サーバーは `127.0.0.1` だけで待ち受け、閲覧は Claude Code が書き出すファイル（`~/.claude/projects/*/*.jsonl`、`~/.claude/sessions/*.json`）を読むだけです。描画に使うライブラリ（marked・DOMPurify・highlight.js・Mermaid・CodeMirror）はバイナリに同梱していて、オフラインで動きます。
+
+**Claude Code の設定を変える必要は？**
+
+ありません。任意で、すべてのセッションに図を Mermaid で描かせたいときは `~/.claude/CLAUDE.md` に次の 1 行を足してください。
+
+```
+図は ```mermaid フェンスで書く（OYAKATA がブラウザで描画する）。ASCIIアートで図を描かない。
+```
+
+<details>
+<summary>キーボードショートカット</summary>
 
 VS Code に合わせています。設定の「ショートカット一覧」でも見られます。
 
@@ -321,22 +224,23 @@ VS Code に合わせています。設定の「ショートカット一覧」で
 
 `Ctrl+W`・`Ctrl+Tab`・`Ctrl+N` などはブラウザが先に使うため割り当てていません。
 
-## 仕組み・プライバシー・安全性
+</details>
 
-- **索引。** `~/.claude/projects/<cwd>/<session>.jsonl` を起動時に 1 回読んでメタデータ（タイトル、cwd、往復数、トークン、直近のコンテキスト量、権限モード、編集ファイル、アーティファクト URL）を作り、以後はファイルサイズの増分だけを読み足します。本文をメモリに持つのは表示中のセッションだけで、15 分見ていないものは落とします。
-- **コンテキスト使用率。** 直近の応答の `input + cache_creation + cache_read + output` トークンを、モデルのコンテキスト長で割った値です。OYAKATA が起動したセッションは Claude Code の報告値、それ以外はモデル名から推定します（Opus / Sonnet 4.6 以降・Fable は 1M、Haiku などは 200k）。
-- **体制図。** `<session>/subagents/agent-*.jsonl` と `*.meta.json` を増分で読み、呼び出し元の Agent ツール呼び出しと突き合わせて、役割・状態・いまの作業を出します。
-- **定義へのジャンプ。** `git grep -P` に宣言の形（`fn x` / `class X` / `def x` / `func (r T) X` / `public … x(` / `const x =` など）を並べたパターンを渡し、宣言らしさ・同じファイル・同じ拡張子・近いフォルダで順位付けします。参照は単語一致の `git grep -w` です。
-- **検索。** ファイルは `git grep`（追跡中と、無視されていない未追跡のファイル）。会話は各セッションの JSONL を全コアで並列に読み、人と Claude の発言（ツールの出力は除く）だけを対象にします。
-- **稼働中セッション。** `~/.claude/sessions/<pid>.json` が一覧です。pid が生きているものだけを「稼働中」と扱い、`status: waiting` は「判断待ち」として表示します。
-- **ターミナルへの打ち込み（Windows）。** そのコンソールの入力バッファへキー入力を書き込みます（`AttachConsole` + `WriteConsoleInputW`）。Claude Code に外から入力を渡す公開手段が無いため、人が打つのと同じ経路を使っています。改行は Ctrl+J（Claude Code の「送らずに改行」）として打ち、送信前に確認を求められるゼロ幅文字などは先に取り除きます。打ち込む前に `sessions/<pid>.json` の `procStart` とプロセスの起動時刻を照合し、pid が別のプロセスに再利用されていたら打ちません。
-- **リポジトリ。** cwd から `.git` を探して判定します。ghq 形式のパスは `owner/name` で表示し、`ghq root` 配下のリポジトリはセッションが無くても一覧に出ます。ブラウザから追加したフォルダは `~/.claude/oyakata.json` に記録します。
-- **Git 操作**は `git` コマンドをそのまま呼びます。commit は選択したファイル（または `git add -A`）、push は上流が無ければ `-u origin HEAD`、pull は `--ff-only`、clone は `git clone --quiet -- <url> <dest>`（既存のフォルダには clone しない）です。ブランチ切替は意図的に入れていません。
-- **Windows の PATH。** 常駐が痩せた環境変数で起動されても（ツールのサンドボックスなど）`git` や `node` が見つかるよう、レジストリのマシン / ユーザー `PATH` を補い、`git` は `OYAKATA_GIT` → `PATH` → Git for Windows の既定の場所の順で探します。
-- **セッションの削除**は `~/.claude/oyakata-trash/<時刻>-<id>/` への移動です。OYAKATA が動かしているものは Claude を終了してから移し、ターミナルで動いているものは削除できません。30 日経ったものは次の起動時に消します。
-- **ファイル保存**は読み込み時の更新時刻を添えて送り、ディスク上で変わっていれば 409 で止めて「上書き / 読み込み直す」を選ばせます。改行コードは元のファイルに合わせます。
-- **ネットワーク。** サーバーは 127.0.0.1 だけで待ち受け、`/api` へのクロスサイト要求は `Sec-Fetch-Site` で拒否、書き込み系はカスタムヘッダ必須（CORS プリフライトで止まる）にしています。
-- **描画**は [marked](https://github.com/markedjs/marked)・[DOMPurify](https://github.com/cure53/DOMPurify)・[highlight.js](https://highlightjs.org/)・[Mermaid](https://mermaid.js.org/)・[CodeMirror 5](https://codemirror.net/5/) をバイナリに同梱しています。オフラインで動きます。
+<details>
+<summary>仕組みと安全性</summary>
+
+- **索引。** `~/.claude/projects/<cwd>/<session>.jsonl` を起動時に 1 回読んでメタデータ（タイトル、cwd、往復数、トークン、権限モード、編集ファイルなど）を作り、以後はファイルの増分だけを読み足します。本文をメモリに持つのは表示中のセッションだけです。
+- **稼働中の判定。** `~/.claude/sessions/<pid>.json` のうち pid が生きているものを「稼働中」とし、`status: waiting` を「判断待ち」として表示します。
+- **コンテキスト使用率。** 直近の応答のトークン数（input + cache + output）をモデルのコンテキスト長で割った値です。OYAKATA が起動したセッションは Claude Code の報告値、それ以外はモデル名から推定します。
+- **体制図。** `<session>/subagents/agent-*.jsonl` と `*.meta.json` を読み、呼び出し元の Agent ツール呼び出しと突き合わせます。
+- **ブラウザから起動するセッション**は `claude -p --input-format stream-json --output-format stream-json --permission-prompt-tool stdio` の子プロセスです。会話は通常どおり `~/.claude/projects` に書かれます。
+- **ターミナルへの打ち込み（Windows）**は、そのコンソールの入力バッファへキー入力を書き込みます（`AttachConsole` + `WriteConsoleInputW`）。打ち込む前にプロセスの起動時刻を照合し、pid が別のプロセスに再利用されていたら打ちません。
+- **Git 操作**は `git` コマンドをそのまま呼びます。commit は選択したファイル、push は上流が無ければ `-u origin HEAD`、pull は `--ff-only`。ブランチ切替は意図的に入れていません。
+- **定義へのジャンプと検索**は `git grep` です。言語サーバーは使いません。
+- **ファイル保存**は読み込み時の更新時刻を添えて送り、ディスク上で変わっていれば止めて「上書き / 読み込み直す」を選ばせます。
+- **ネットワーク。** `/api` へのクロスサイト要求は `Sec-Fetch-Site` で拒否し、書き込み系はカスタムヘッダ必須にしています。
+
+</details>
 
 ## 開発
 
@@ -368,7 +272,7 @@ web/
   index.html / style.css / icon.svg
   app.js         共通: API・テーマ・Markdown・トランスクリプト描画・イベントバス・設定
   workbench.js   ペインの分割ツリー、タブ、ドラッグ＆ドロップ、リポジトリごとの配置
-  chat.js        チャットペイン（会話・ターミナル風の入力欄とステータス行・許可/質問/計画カード・進行表示）
+  chat.js        チャットペイン（会話・入力欄とステータス行・許可/質問/計画カード・進行表示）
   team.js        体制図（棟梁とサブエージェントの構成・状態）
   code.js        定義 / 参照へのジャンプ、戻る / 進む、会話中のファイル参照
   palette.js     Ctrl+P / コマンドパレット / 候補の選択
@@ -379,6 +283,7 @@ web/
   vendor/        同梱ライブラリ（marked, DOMPurify, highlight.js, Mermaid, CodeMirror 5）
 skills/oyakata/  /oyakata スキル
 scripts/         install.sh / install.ps1（GitHub Releases のビルド済みバイナリを入れる）
+docs/images/     README のスクリーンショット（ダミーのセッションとリポジトリで撮影）
 .claude-plugin/  プラグインとマーケットプレイスのマニフェスト
 .github/workflows/release.yml  バージョンタグで 6 ターゲットをビルドして Release を公開
 ```
