@@ -230,6 +230,73 @@ pub fn detect(home: &Path, claude_dir: &Path, claude_exe: Option<PathBuf>, overr
         .collect()
 }
 
+/// What an agent uses when OYAKATA passes no `--model` / effort, from the agent's own
+/// settings. Read on every `/api/config` (the files are small), so edits show up without a
+/// restart. Unknown fields stay `None` and the browser just says "default".
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct Defaults {
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    /// Effort set for one model (Claude Code's `modelSettings.<model>.effortLevel`), which
+    /// wins over `effort` while that model is in use.
+    pub effort_by_model: std::collections::BTreeMap<String, String>,
+}
+
+pub fn defaults(agent: &AgentInfo) -> Defaults {
+    let read = |name: &str| std::fs::read_to_string(agent.data_dir.join(name)).ok();
+    match agent.kind {
+        AgentKind::Claude => {
+            let mut d = read("settings.json").map(|s| claude_defaults(&s)).unwrap_or_default();
+            // `ANTHROPIC_MODEL` beats the settings file (and reaches the children we spawn).
+            if let Some(m) = std::env::var("ANTHROPIC_MODEL").ok().filter(|m| !m.trim().is_empty()) {
+                d.model = Some(m.trim().to_string());
+            }
+            d
+        }
+        AgentKind::Codex => read("config.toml").map(|s| codex_defaults(&s)).unwrap_or_default(),
+        _ => Defaults::default(),
+    }
+}
+
+/// `~/.claude/settings.json`: `model`, `effortLevel`, `modelSettings.<model>.effortLevel`.
+fn claude_defaults(text: &str) -> Defaults {
+    let Ok(v) = serde_json::from_str::<Value>(text) else { return Defaults::default() };
+    let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let effort_by_model = v
+        .get("modelSettings")
+        .and_then(Value::as_object)
+        .map(|m| m.iter().filter_map(|(model, cfg)| Some((model.clone(), s(cfg, "effortLevel")?))).collect())
+        .unwrap_or_default();
+    Defaults { model: s(&v, "model"), effort: s(&v, "effortLevel"), effort_by_model }
+}
+
+/// `~/.codex/config.toml`: the top-level `model` and `model_reasoning_effort` keys (the
+/// ones before the first `[table]`), which is all Codex reads for its defaults.
+fn codex_defaults(text: &str) -> Defaults {
+    let mut d = Defaults::default();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            break;
+        }
+        let Some((k, v)) = line.split_once('=') else { continue };
+        let v = v.trim();
+        let v = match v.strip_prefix('"').and_then(|r| r.split_once('"')) {
+            Some((inner, _)) => inner,
+            None => v.split('#').next().unwrap_or("").trim(),
+        };
+        if v.is_empty() {
+            continue;
+        }
+        match k.trim() {
+            "model" => d.model = Some(v.to_string()),
+            "model_reasoning_effort" => d.effort = Some(v.to_string()),
+            _ => {}
+        }
+    }
+    d
+}
+
 /// A session file (or, for OpenCode, a session row) found by an adapter.
 #[derive(Debug, Clone)]
 pub struct Discovered {
@@ -381,6 +448,24 @@ mod tests {
         assert_eq!(permission_args(AgentKind::Copilot, "auto"), vec!["--allow-all-tools"]);
         assert!(permission_args(AgentKind::Copilot, "plan").is_empty());
         assert_eq!(permission_args(AgentKind::Opencode, "plan"), vec!["--agent", "plan"]);
+    }
+
+    #[test]
+    fn reads_default_model_and_effort() {
+        let d = claude_defaults(r#"{"model":"opus","effortLevel":"xhigh","modelSettings":{"claude-opus-5-5":{"effortLevel":"max"},"x":{}}}"#);
+        assert_eq!(d.model.as_deref(), Some("opus"));
+        assert_eq!(d.effort.as_deref(), Some("xhigh"));
+        assert_eq!(d.effort_by_model.get("claude-opus-5-5").map(String::as_str), Some("max"));
+        assert_eq!(d.effort_by_model.len(), 1);
+        assert_eq!(claude_defaults("not json"), Defaults::default());
+        let c = codex_defaults("# comment
+model = \"gpt-5.5\"  # pinned
+model_reasoning_effort = high
+[profiles.x]
+model = \"other\"
+");
+        assert_eq!(c.model.as_deref(), Some("gpt-5.5"));
+        assert_eq!(c.effort.as_deref(), Some("high"));
     }
 
     #[test]

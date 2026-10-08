@@ -528,5 +528,6 @@
  "すべてのビューを縦に並べて表示（境目はドラッグで高さを変えられます）": "Stack all views (drag the dividers to resize)",
  "並べて表示中（クリックで 1 つずつの表示に戻す）": "Views stacked (click to show one at a time)",
  "未コミットの変更が増えています。内容を確認してください。": "New uncommitted changes appeared. Check them before removing.",
- "削除中… {i}/{n}": "Removing… {i}/{n}"
+ "削除中… {i}/{n}": "Removing… {i}/{n}",
+ "（既定）": " (default)"
 }

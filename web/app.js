@@ -40,6 +40,19 @@
     const list = runnableAgents();
     return list.some((a) => a.id === saved) ? saved : (list[0]?.id || 'claude');
   }
+  /// Model a new Claude Code session starts with unless another one is picked.
+  const DEFAULT_MODEL = 'claude-opus-5-5';
+  /// What an agent falls back to when OYAKATA passes no model / effort: its own settings,
+  /// read by the server (`default_model`, `default_effort`, `effort_by_model`).
+  function agentDefaultModel(id) { return agentInfo(id)?.default_model || ''; }
+  function agentDefaultEffort(id, model) {
+    const a = agentInfo(id);
+    const by = a?.effort_by_model || {};
+    // Per-model settings are keyed by full id; an alias such as "opus" matches the one id
+    // that contains it.
+    const alias = model && !by[model] ? Object.keys(by).filter((k) => k.includes(`-${model}-`) || k.endsWith(`-${model}`)) : [];
+    return (model && by[model]) || (alias.length === 1 ? by[alias[0]] : '') || a?.default_effort || '';
+  }
   const EFFORTS = [['', t('既定')], ['low', 'low'], ['medium', 'medium'], ['high', 'high'], ['xhigh', 'xhigh'], ['max', 'max']];
   /// Permission modes, labelled the way Claude Code's terminal shows them under the input.
   const MODES = {
@@ -1211,7 +1224,7 @@
     sessionTitle, statusLabel, observeMermaid, itemHtml, itemNode, divider, buildRange, toolInputHtml, toolBodyHtml, bindTranscript, enhanceLongMd, decorateText,
     showKeys, toggleSidebar, activeChat,
     isLog, isPrompt, TOOL_ICON, MODELS, EFFORTS, MODES, MODE_CYCLE, DEFAULT_MODE, runDefaults, saveRunDefaults, fillSelect, uuid,
-    agentInfo, agentLabel, runnableAgents, defaultAgent,
+    agentInfo, agentLabel, runnableAgents, defaultAgent, DEFAULT_MODEL, agentDefaultModel, agentDefaultEffort,
     i18n: window.OY_I18N, t: window.OY_I18N.t,
     newSessionDialog, addRepoDialog, folderBrowser, setActiveRepo, followSession, repoOfCwd, workRoot,
     deleteSession, restoreSession, applyTheme, isDark, refreshSessions, refreshRepos, setShowLogs, init,

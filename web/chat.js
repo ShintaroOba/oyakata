@@ -8,7 +8,7 @@
   const {
     $, $$, esc, api, state, bus, md, toast, sessionTitle, statusLabel, stripCwd, fmtTokens, fmtDuration, shortModel, buildRange,
     observeMermaid, bindTranscript, TOOL_ICON, toolInputHtml, MODELS, EFFORTS, MODES, MODE_CYCLE, DEFAULT_MODE, copyText, relTo,
-    contextWindow, basename, isPrompt, repoOfCwd, agentInfo, agentLabel,
+    contextWindow, basename, isPrompt, repoOfCwd, agentInfo, agentLabel, DEFAULT_MODEL, agentDefaultModel, agentDefaultEffort,
   } = OY;
 
   const INITIAL_WINDOW = 300;
@@ -70,7 +70,7 @@
       this.agent = this.session?.agent || data.agent || 'claude';
       this.run = null;
       // Choices for a draft or a resumed session; a running one takes them from Claude Code.
-      this.opts = { model: '', mode: DEFAULT_MODE, effort: '', worktree: state.config.worktree !== false };
+      this.opts = { model: data.draft && this.agent === 'claude' ? DEFAULT_MODEL : '', mode: DEFAULT_MODE, effort: '', worktree: state.config.worktree !== false };
       this.renderedFrom = 0;
       this.lastDateKey = null;
       this.follow = true;
@@ -397,14 +397,20 @@
     // ----------------------------------------------------------- status line
     /// What the status line shows: a running session reports its own mode/model; a draft or an
     /// ended session shows what will be used on (re)start; a terminal session is read-only.
+    /// `defModel` / `defEffort` name what the agent falls back to when nothing is chosen
+    /// (only where OYAKATA knows nothing was passed: not for terminal sessions).
     current() {
       const s = this.session;
       const r = this.run && this.run.status !== 'exited' ? this.run : null;
+      let c;
       if (s?.owner === 'oyakata' || (r && !s)) {
-        return { mode: r?.permission_mode || s?.permission_mode || DEFAULT_MODE, model: r?.model || s?.model || '', effort: r?.effort || s?.effort || '', edit: 'live' };
-      }
-      if (s?.owner === 'terminal' || s?.owner === 'external') return { mode: s.permission_mode || '', model: s.model || '', effort: s.effort || '', edit: null };
-      return { mode: this.opts.mode, model: this.opts.model || s?.model || '', effort: this.opts.effort || s?.effort || '', edit: 'local' };
+        c = { mode: r?.permission_mode || s?.permission_mode || DEFAULT_MODE, model: r?.model || s?.model || '', effort: r?.effort || s?.effort || '', edit: 'live' };
+      } else if (s?.owner === 'terminal' || s?.owner === 'external') {
+        return { mode: s.permission_mode || '', model: s.model || '', effort: s.effort || '', edit: null, defModel: '', defEffort: '' };
+      } else c = { mode: this.opts.mode, model: this.opts.model || s?.model || '', effort: this.opts.effort || s?.effort || '', edit: 'local' };
+      c.defModel = c.model ? '' : agentDefaultModel(this.agent);
+      c.defEffort = c.effort ? '' : agentDefaultEffort(this.agent, c.model || c.defModel);
+      return c;
     }
     renderStatusline() {
       const c = this.current();
@@ -434,18 +440,18 @@
       const hint = this.q('.sl-hint');
       hint.textContent = s?.owner === 'terminal' ? t('ターミナルで実行中') : s?.owner === 'external' ? t('別のプロセスで実行中') : (s && s.status === 'ended' && !this.isDraft()) ? t('再開時に適用') : (!this.interactive() && c.edit === 'live') ? t('次のターンから適用') : '';
       const model = this.q('.sl-model');
-      model.textContent = c.model ? shortModel(c.model) : t('既定のモデル');
+      model.textContent = c.model ? shortModel(c.model) : c.defModel ? `${shortModel(c.defModel)}${t('（既定）')}` : t('既定のモデル');
       model.disabled = !c.edit;
       model.title = c.edit ? t('モデルを切り替える') : t('モデル');
       const effort = this.q('.sl-effort');
-      effort.hidden = (!c.effort && c.edit !== 'local') || this.agent === 'gemini';
-      effort.textContent = c.effort ? `effort ${c.effort}` : t('effort 既定');
+      effort.hidden = (!c.effort && !c.defEffort && c.edit !== 'local') || this.agent === 'gemini';
+      effort.textContent = c.effort ? `effort ${c.effort}` : c.defEffort ? `effort ${c.defEffort}${t('（既定）')}` : t('effort 既定');
       effort.disabled = c.edit !== 'local';
       effort.title = c.edit === 'local' ? t('努力レベル（開始・再開時に適用）') : t('努力レベル');
       // Context usage: tokens in the window after the latest response.
       const ctx = this.q('.sl-ctx');
       const used = s?.context_tokens || 0;
-      const win = contextWindow(c.model || s?.model, s?.context_window || this.run?.context_window, used);
+      const win = contextWindow(c.model || s?.model || c.defModel, s?.context_window || this.run?.context_window, used);
       if (!used || !win) { ctx.hidden = true; return; }
       const pct = Math.min(100, (used / win) * 100);
       ctx.hidden = false;
@@ -464,15 +470,26 @@
       if (!this.interactive()) {
         // Other agents accept whatever model name their CLI knows; offer the default and a box.
         const cur = !c.model ? ' class="cur"' : '';
-        return `<div class="ptitle">${t("モデル（")}${esc(this.who())}）</div><a href="#" data-model=""${cur}><span class="ml">${t("既定のモデル")}</span>${!c.model ? '<span class="mc">✓</span>' : ''}</a>
+        const def = agentDefaultModel(this.agent);
+        return `<div class="ptitle">${t("モデル（")}${esc(this.who())}）</div><a href="#" data-model=""${cur}><span class="ml">${t("既定のモデル")}</span>${def ? `<span class="md2">${esc(def)}</span>` : ''}${!c.model ? '<span class="mc">✓</span>' : ''}</a>
           <div class="pinput"><input type="text" class="model-input" placeholder="${t("モデル名を入力して Enter（例: gpt-5.5 / pro / provider/model）")}" value="${esc(c.model || '')}" spellcheck="false"></div>`;
       }
-      return t('<div class="ptitle">モデル</div>') + MODELS.map(([v, l]) =>
-        `<a href="#" data-model="${esc(v)}" class="${v === c.model || (!v && !c.model) ? 'cur' : ''}"><span class="ml">${esc(l)}</span>${v ? `<span class="md2">${esc(v)}</span>` : ''}${v === c.model || (!v && !c.model) ? '<span class="mc">✓</span>' : ''}</a>`).join('');
+      // The "default" row names what Claude Code's settings resolve to.
+      const def = agentDefaultModel(this.agent);
+      return t('<div class="ptitle">モデル</div>') + MODELS.map(([v, l]) => {
+        const sub = v || def;
+        const cur = v === c.model || (!v && !c.model);
+        return `<a href="#" data-model="${esc(v)}" class="${cur ? 'cur' : ''}"><span class="ml">${esc(l)}</span>${sub ? `<span class="md2">${esc(sub)}</span>` : ''}${cur ? '<span class="mc">✓</span>' : ''}</a>`;
+      }).join('');
     }
     effortMenuHtml() {
       const c = this.current();
-      return t('<div class="ptitle">努力レベル</div>') + EFFORTS.map(([v, l]) => `<a href="#" data-effort="${esc(v)}" class="${v === (c.effort || '') ? 'cur' : ''}"><span class="ml">${esc(l)}</span>${v === (c.effort || '') ? '<span class="mc">✓</span>' : ''}</a>`).join('');
+      // The "default" row names the effort the agent would use with the chosen model.
+      const def = agentDefaultEffort(this.agent, c.model || c.defModel);
+      return t('<div class="ptitle">努力レベル</div>') + EFFORTS.map(([v, l]) => {
+        const cur = v === (c.effort || '');
+        return `<a href="#" data-effort="${esc(v)}" class="${cur ? 'cur' : ''}"><span class="ml">${esc(l)}</span>${!v && def ? `<span class="md2">${esc(def)}</span>` : ''}${cur ? '<span class="mc">✓</span>' : ''}</a>`;
+      }).join('');
     }
     async setMode(mode) {
       const c = this.current();

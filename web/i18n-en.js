@@ -525,6 +525,7 @@ window.OY_I18N_EN = {
  "（入力欄で）権限モードを切替": "Cycle the permission mode (in the input)",
  "（別のプロセスで実行）": " (running in another process)",
  "（役割の説明なし）": "(no role description)",
+ "（既定）": " (default)",
  "（未ステージ）": " (unstaged)",
  "（無題）": "(untitled)",
  "（開始中）": "(starting)",

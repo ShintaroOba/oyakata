@@ -360,6 +360,7 @@ fn config_json(app: &Shared) -> Value {
     let agents_json: Vec<Value> = agents
         .iter()
         .map(|a| {
+            let d = crate::agents::defaults(a);
             json!({
                 "id": a.kind.id(),
                 "label": a.label,
@@ -372,6 +373,10 @@ fn config_json(app: &Shared) -> Value {
                 "assigns_id": matches!(a.kind, AgentKind::Codex | AgentKind::Opencode),
                 // Permission prompts and mid-turn steering exist only for Claude Code.
                 "interactive": a.kind == AgentKind::Claude,
+                // What the agent falls back to when no model / effort is passed.
+                "default_model": d.model,
+                "default_effort": d.effort,
+                "effort_by_model": d.effort_by_model,
             })
         })
         .collect();

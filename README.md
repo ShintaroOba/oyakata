@@ -95,7 +95,7 @@ From then on, the agent in that session knows it is being read in a browser: it 
 
 - **The sidebar** lists running sessions at the top and each repository's history below. The dot shows the state: orange is working, green is idle, purple is waiting for your decision. Sessions of agents other than Claude Code carry a label such as "Codex CLI", and sessions working in a worktree show their branch after ⎇. The counts appear at the bottom of the sidebar too ("1 working · 1 waiting").
 - **Click a session** to open its conversation. The work log (tool calls and so on) is hidden; the single line above the input tells you what the agent is doing right now (`Bash: Run the filter tests … esc to interrupt`). A setting shows the full log.
-- **Under the input** is a status line like the terminal's: permission mode on the left (cycle with Shift+Tab), model, effort level and context usage on the right. For agents other than Claude Code, changes apply from the next turn.
+- **Under the input** is a status line like the terminal's: permission mode on the left (cycle with Shift+Tab), model, effort level and context usage on the right. For agents other than Claude Code, changes apply from the next turn. New Claude Code sessions start on Opus 5.5. When the model or effort is left at the default, the status line names what the agent's own settings resolve to, such as `effort xhigh (default)` from `~/.claude/settings.json`.
 
 ### Starting a new session
 
