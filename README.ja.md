@@ -149,7 +149,7 @@ curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/in
 irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex
 ```
 
-置き場所は `OYAKATA_INSTALL_DIR`、版は `OYAKATA_VERSION=v0.1.0` で指定できます。Rust（1.80 以上）がある環境なら `cargo install --git https://github.com/ShintaroOba/oyakata` でも入ります。
+置き場所は `OYAKATA_INSTALL_DIR`、版は `OYAKATA_VERSION=v0.2.0` で指定できます。Rust（1.80 以上）がある環境なら `cargo install --git https://github.com/ShintaroOba/oyakata` でも入ります。
 
 そのほかに必要なもの:
 
@@ -288,7 +288,7 @@ UI の文言は日本語で書き、英語は辞書で当てます。文言を�
 リリースは、`Cargo.toml` と `.claude-plugin/plugin.json` の `version` を同じ番号に上げてから `vX.Y.Z` のタグを push します。`.github/workflows/release.yml` が 6 つのターゲットをビルドして GitHub Release に添付し、インストールスクリプトはそこから取ります。
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
 ```

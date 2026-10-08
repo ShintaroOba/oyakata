@@ -151,7 +151,7 @@ curl -fsSL https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/in
 irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex
 ```
 
-`OYAKATA_INSTALL_DIR` changes the location and `OYAKATA_VERSION=v0.1.0` pins a release. With a Rust toolchain (1.80+), `cargo install --git https://github.com/ShintaroOba/oyakata` works too.
+`OYAKATA_INSTALL_DIR` changes the location and `OYAKATA_VERSION=v0.2.0` pins a release. With a Rust toolchain (1.80+), `cargo install --git https://github.com/ShintaroOba/oyakata` works too.
 
 You also need:
 
@@ -290,7 +290,7 @@ UI strings are written in Japanese and English comes from a dictionary. After ad
 To release, bump `version` in `Cargo.toml` and `.claude-plugin/plugin.json` to the same number and push a `vX.Y.Z` tag. `.github/workflows/release.yml` builds six targets and attaches the archives to a GitHub Release, which is where the install scripts download from.
 
 ```bash
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
 ```

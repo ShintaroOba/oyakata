@@ -6,7 +6,7 @@ Installs the oyakata binary from GitHub Releases. No Rust toolchain needed.
 Downloads the Windows archive for this machine's CPU, verifies its SHA-256, puts
 oyakata.exe in the install directory and adds that directory to the user PATH.
 
-  powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1 [-Version v0.1.0] [-InstallDir C:\tools\oyakata] [-NoPath]
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1 [-Version v0.2.0] [-InstallDir C:\tools\oyakata] [-NoPath]
   irm https://raw.githubusercontent.com/ShintaroOba/oyakata/main/scripts/install.ps1 | iex
 
 Environment variables (overridden by the parameters):
